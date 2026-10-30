@@ -14,6 +14,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use UnitEnum;
 
 class PurchaseRequestDocumentSettingResource extends Resource
 {
@@ -21,11 +22,15 @@ class PurchaseRequestDocumentSettingResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
-    protected static ?string $navigationLabel = 'Pengaturan Dokumen PR';
+    protected static string|UnitEnum|null $navigationGroup = 'Purchasing';
 
-    protected static ?string $modelLabel = 'Pengaturan Dokumen PR';
+    protected static ?int $navigationSort = 5;
 
-    protected static ?string $pluralModelLabel = 'Pengaturan Dokumen PR';
+    protected static ?string $navigationLabel = 'PR Document Setting';
+
+    protected static ?string $modelLabel = 'PR Document Setting';
+
+    protected static ?string $pluralModelLabel = 'PR Document Setting';
 
     public static function canViewAny(): bool
     {

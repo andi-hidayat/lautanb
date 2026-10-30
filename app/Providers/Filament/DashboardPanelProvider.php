@@ -268,13 +268,13 @@ class DashboardPanelProvider extends PanelProvider
     {
         return $panel
             ->default()
-            ->navigationItems([
-                NavigationItem::make('Home')
-                    ->icon(Heroicon::OutlinedHome)
-                    ->url(url('/'))
-                    ->openUrlInNewTab()
-                    ->sort(PHP_INT_MIN),
-            ])
+            // ->navigationItems([
+            //     NavigationItem::make('Home')
+            //         ->icon(Heroicon::OutlinedHome)
+            //         ->url(url('/'))
+            //         ->openUrlInNewTab()
+            //         ->sort(PHP_INT_MIN),
+            // ])
             ->id('dashboard')
             ->path('dashboard')
             ->viteTheme('resources/css/filament/dashboard/theme.css')

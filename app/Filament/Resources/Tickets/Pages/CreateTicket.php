@@ -12,6 +12,8 @@ class CreateTicket extends CreateRecord
 {
     protected static string $resource = TicketResource::class;
 
+    protected static bool $canCreateAnother = false;
+
     /**
      * Fill in the ticket data before it is saved.
      *

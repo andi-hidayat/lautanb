@@ -17,6 +17,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use UnitEnum;
 
 class TicketResource extends Resource
 {
@@ -27,6 +28,10 @@ class TicketResource extends Resource
     protected static ?string $recordTitleAttribute = 'title';
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedTicket;
+
+    protected static string|UnitEnum|null $navigationGroup = 'IT Support';
+
+    protected static ?int $navigationSort = 1;
 
     public static function form(Schema $schema): Schema
     {

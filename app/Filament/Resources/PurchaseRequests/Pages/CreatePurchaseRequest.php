@@ -14,6 +14,8 @@ class CreatePurchaseRequest extends CreateRecord
 {
     protected static string $resource = PurchaseRequestResource::class;
 
+    protected static bool $canCreateAnother = false;
+
     public function getHeading(): string
     {
         return 'Create Request';

@@ -8,4 +8,6 @@ use Filament\Resources\Pages\CreateRecord;
 class CreateProductComparison extends CreateRecord
 {
     protected static string $resource = ProductComparisonResource::class;
+
+    protected static bool $canCreateAnother = false;
 }

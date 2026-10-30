@@ -11,6 +11,8 @@ class CreatePettyCash extends CreateRecord
 {
     protected static string $resource = PettyCashResource::class;
 
+    protected static bool $canCreateAnother = false;
+
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         return PettyCashForm::prepareRecordData($data, PettyCash::nextTransactionNumber());
