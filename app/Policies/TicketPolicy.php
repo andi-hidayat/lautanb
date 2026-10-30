@@ -18,11 +18,11 @@ class TicketPolicy
     }
 
     /**
-     * Staff may view every ticket, regular users only their own.
+     * Ticket handlers may view every ticket, regular users only their own.
      */
     public function view(User $user, Ticket $ticket): bool
     {
-        return $user->isStaff() || $ticket->user_id === $user->id;
+        return $user->canHandleTickets() || $ticket->user_id === $user->id;
     }
 
     public function create(User $user): bool
@@ -35,7 +35,7 @@ class TicketPolicy
      */
     public function update(User $user, Ticket $ticket): bool
     {
-        if ($user->isStaff()) {
+        if ($user->canHandleTickets()) {
             return true;
         }
 

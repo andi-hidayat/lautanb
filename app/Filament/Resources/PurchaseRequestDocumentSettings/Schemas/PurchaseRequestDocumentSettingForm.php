@@ -30,7 +30,7 @@ class PurchaseRequestDocumentSettingForm
                     ->required(),
                 TextInput::make('number_prefix')
                     ->label('Purchase Request Number Prefix')
-                    ->helperText('Number Format PREFIX/TAHUN/URUTAN, ex PR/IT/2026/0001.')
+                    ->helperText('Number Format PREFIX/YEAR/SEQUENCE, ex PR/IT/2026/0001.')
                     ->required()
                     ->unique(ignoreRecord: true)
                     ->maxLength(64),

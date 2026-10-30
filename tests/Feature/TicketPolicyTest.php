@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Employee;
 use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -28,6 +29,16 @@ class TicketPolicyTest extends TestCase
 
         $this->assertTrue($admin->can('view', $ticket));
         $this->assertTrue($admin->can('update', $ticket));
+    }
+
+    public function test_it_staff_can_view_and_update_every_ticket(): void
+    {
+        $employee = Employee::factory()->create(['division' => 'it']);
+        $itStaff = User::factory()->create(['employee_id' => $employee->id]);
+        $ticket = Ticket::factory()->create();
+
+        $this->assertTrue($itStaff->can('view', $ticket));
+        $this->assertTrue($itStaff->can('update', $ticket));
     }
 
     public function test_a_user_can_update_their_own_open_ticket(): void

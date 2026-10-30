@@ -64,12 +64,11 @@ class ProductComparisonForm
                                 Textarea::make('value')
                                     ->label('Details')
                                     ->required()
-                                    // ->rows(2),
                                     ->maxLength(255),
                             ])
                             ->columnSpanFull(),
                         FileUpload::make('attachment')
-                            ->label('Attachment')
+                            ->label('Product Images and Documents')
                             ->multiple()
                             ->disk('public')
                             ->directory('product-comparisons')

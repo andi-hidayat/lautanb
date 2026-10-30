@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\Employees\Tables;
 
-// use App\Enums\SignaturePosition;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -29,7 +28,6 @@ class EmployeesTable
                     ->label('Position')
                     ->badge()
                     ->formatStateUsing(fn (?string $state): ?string => filled($state) ? str($state)->replace('_', ' ')->title()->value() : null),
-                // ->color(fn (?string $state): string => filled($state) ? (SignaturePosition::tryFrom($state)?->getColor() ?? 'gray') : 'gray'),
                 TextColumn::make('division')
                     ->badge(),
                 TextColumn::make('user.id')

@@ -57,32 +57,32 @@ class DashboardStatsWidget extends StatsOverviewWidget
                 ->color('success'),
 
             Stat::make('Total Product Comparison', number_format($totalProductComparisons, 0, ',', '.'))
-                ->description('Jumlah seluruh product comparison')
+                ->description('Total of Product Comparison')
                 ->descriptionIcon('heroicon-m-squares-2x2')
                 ->color('info'),
 
             Stat::make('Total Purchase Planning', number_format($totalPurchasePlans, 0, ',', '.'))
-                ->description('Nilai: Rp '.number_format($totalPurchasePlanValue, 0, ',', '.'))
+                ->description('Amount: Rp '.number_format($totalPurchasePlanValue, 0, ',', '.'))
                 ->descriptionIcon('heroicon-m-clipboard-document-list')
                 ->color('warning'),
 
             Stat::make('Total Purchase Request', number_format($totalPurchaseRequests, 0, ',', '.'))
-                ->description('Nilai: Rp '.number_format($totalPurchaseRequestValue, 0, ',', '.'))
+                ->description('Amount: Rp '.number_format($totalPurchaseRequestValue, 0, ',', '.'))
                 ->descriptionIcon('heroicon-m-document-text')
                 ->color('primary'),
 
             Stat::make('Total Ticket', number_format($totalTickets, 0, ',', '.'))
-                ->description('Jumlah seluruh tiket')
+                ->description('Total of Ticket')
                 ->descriptionIcon('heroicon-m-ticket')
                 ->color('danger'),
 
             Stat::make('Total User', number_format($totalUsers, 0, ',', '.'))
-                ->description('Pengguna terdaftar')
+                ->description('Registered User')
                 ->descriptionIcon('heroicon-m-users')
                 ->color('gray'),
 
             Stat::make('Total Employee', number_format($totalEmployees, 0, ',', '.'))
-                ->description('Jumlah karyawan')
+                ->description('Total Of Employee')
                 ->descriptionIcon('heroicon-m-user-group')
                 ->color('gray'),
         ];

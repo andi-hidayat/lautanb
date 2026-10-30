@@ -57,14 +57,14 @@ class PurchasePlanInfolist
                             ->imageHeight(80)
                             ->placeholder('No picture'),
                     ]),
-                // TextEntry::make('items_total')
-                //     ->label('Total Required Cost')
-                //     ->weight('bold')
-                //     ->size('lg')
-                //     ->state(fn (PurchasePlan $record): string => PurchasePlan::formatRupiah(
-                //         (float) $record->items->sum('total_cost'),
-                //     ))
-                //     ->columnSpanFull(),
+                TextEntry::make('items_total')
+                    ->label('Total Required Cost')
+                    ->weight('bold')
+                    ->size('lg')
+                    ->state(fn (PurchasePlan $record): string => PurchasePlan::formatRupiah(
+                        (float) $record->items()->sum('total_cost'),
+                    ))
+                    ->columnSpanFull(),
                 TextEntry::make('created_at')
                     ->label('Created at')
                     ->dateTime(),
