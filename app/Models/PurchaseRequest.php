@@ -15,10 +15,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'description',
     'purchase_tipe',
     'pay_to',
-    'bank_account_number',
-    'unit_price',
-    'quantity',
-    'total_price',
+    'bank_merchant_name',
+    'account_number',
     'total_cost',
     'user_signature',
     'finance_signature',
@@ -92,9 +90,6 @@ class PurchaseRequest extends Model
             'needed_at' => 'date',
             'issue_date' => 'date',
             'effective_date' => 'date',
-            'unit_price' => 'decimal:2',
-            'quantity' => 'integer',
-            'total_price' => 'decimal:2',
             'total_cost' => 'decimal:2',
         ];
     }

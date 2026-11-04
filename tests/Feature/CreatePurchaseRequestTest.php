@@ -71,6 +71,8 @@ class CreatePurchaseRequestTest extends TestCase
             'title' => 'Permintaan Laptop Baru',
             'requested_by' => $user->id,
             'pay_to' => 'PT Contoh',
+            'bank_merchant_name' => 'BCA',
+            'account_number' => '123456789',
             'division' => 'it',
             'document_number' => 'FRM-IT',
             'revision_number' => '02',
