@@ -2,6 +2,9 @@
 
 namespace App\Filament\Resources\PurchaseRequests\Tables;
 
+use App\Enums\PurchaseRequestStatus;
+use App\Filament\Resources\PurchaseRequests\Actions\PurchaseRequestApprovalActions;
+use App\Models\PurchaseRequest;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -30,7 +33,8 @@ class PurchaseRequestsTable
                     ->sortable(),
                 TextColumn::make('status')
                     ->badge()
-                    ->searchable(),
+                    ->searchable()
+                    ->tooltip(fn (PurchaseRequest $record): ?string => $record->status === PurchaseRequestStatus::Rejected ? 'Alasan: '.$record->rejection_reason : null),
                 TextColumn::make('requestedBy.email')
                     ->label('Requested by')
                     ->searchable(),
@@ -50,6 +54,9 @@ class PurchaseRequestsTable
                 //
             ])
             ->recordActions([
+                PurchaseRequestApprovalActions::makeApproveAction(),
+                PurchaseRequestApprovalActions::makeRejectAction(),
+                PurchaseRequestApprovalActions::makeResubmitAction(),
                 ViewAction::make(),
                 EditAction::make(),
             ])

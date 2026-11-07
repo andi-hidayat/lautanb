@@ -2,11 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Enums\PurchaseRequestStatus;
 use App\Enums\SignaturePosition;
 use App\Filament\Resources\PurchaseRequests\Pages\CreatePurchaseRequest;
 use App\Filament\Resources\PurchaseRequests\Pages\EditPurchaseRequest;
 use App\Models\Employee;
 use App\Models\PurchaseRequest;
+use App\Models\PurchaseRequestType;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -123,6 +125,7 @@ class PurchaseRequestSignatureTest extends TestCase
     {
         $request = $this->createPurchaseRequest([
             'user_signature' => $this->signature(),
+            'status' => PurchaseRequestStatus::PendingFinance,
         ]);
 
         $this->actingAs($this->userWithPosition(SignaturePosition::Finance));
@@ -136,10 +139,11 @@ class PurchaseRequestSignatureTest extends TestCase
             ->assertFormFieldDisabled('director_signature');
     }
 
-    public function test_a_position_can_save_its_signature(): void
+    public function test_a_position_can_save_its_signature_and_advance_status(): void
     {
         $request = $this->createPurchaseRequest([
             'user_signature' => $this->signature(),
+            'status' => PurchaseRequestStatus::PendingFinance,
         ]);
 
         $this->actingAs($this->userWithPosition(SignaturePosition::Finance));
@@ -158,6 +162,7 @@ class PurchaseRequestSignatureTest extends TestCase
         $request->refresh();
 
         $this->assertTrue($request->hasSignature(SignaturePosition::Finance));
+        $this->assertEquals(PurchaseRequestStatus::PendingAccounting, $request->status);
     }
 
     public function test_a_signature_cannot_be_changed_after_it_has_been_signed(): void
@@ -165,6 +170,7 @@ class PurchaseRequestSignatureTest extends TestCase
         $request = $this->createPurchaseRequest([
             'user_signature' => $this->signature(),
             'finance_signature' => $this->signature('finance'),
+            'status' => PurchaseRequestStatus::PendingAccounting,
         ]);
 
         $this->actingAs($this->userWithPosition(SignaturePosition::Finance));
@@ -176,6 +182,136 @@ class PurchaseRequestSignatureTest extends TestCase
             ->assertFormFieldDisabled('accounting_signature');
     }
 
+    public function test_multi_level_approval_flow_and_rejection(): void
+    {
+        $requester = $this->userWithEmployee('Pemohon', 'staff', 'sales');
+        $finance = $this->userWithPosition(SignaturePosition::Finance);
+        $accountingStaff = $this->userWithPosition(SignaturePosition::Accounting);
+        $spv = $this->userWithPosition(SignaturePosition::AccountingSpv);
+        $director = $this->userWithPosition(SignaturePosition::Director);
+
+        $request = $this->createPurchaseRequest([
+            'requested_by' => $requester->id,
+            'user_signature' => $this->signature('requester'),
+            'status' => PurchaseRequestStatus::PendingFinance,
+        ]);
+
+        // 1. Finance approves -> moves to PendingAccounting
+        $this->assertTrue($request->canBeApprovedBy($finance));
+        $request->approve($finance, $this->signature('finance'));
+        $this->assertEquals(PurchaseRequestStatus::PendingAccounting, $request->status);
+
+        // 2. Accounting staff approves -> moves to PendingAccountingSpv
+        $this->assertTrue($request->canBeApprovedBy($accountingStaff));
+        $request->approve($accountingStaff, $this->signature('accounting_staff'));
+        $this->assertEquals(PurchaseRequestStatus::PendingAccountingSpv, $request->status);
+
+        // 3. Accounting SPV rejects with reason
+        $this->assertTrue($request->canBeRejectedBy($spv));
+        $request->reject($spv, 'Harga satuan terlalu mahal, mohon negosiasi ulang');
+        $this->assertEquals(PurchaseRequestStatus::Rejected, $request->status);
+        $this->assertEquals('Harga satuan terlalu mahal, mohon negosiasi ulang', $request->rejection_reason);
+        $this->assertEquals($spv->id, $request->rejected_by);
+
+        // 4. Requester resubmits -> returns to PendingFinance
+        $this->assertTrue($request->canBeResubmittedBy($requester));
+        $request->resubmit();
+        $this->assertEquals(PurchaseRequestStatus::PendingFinance, $request->status);
+        $this->assertNull($request->rejection_reason);
+        $this->assertNull($request->finance_signature);
+
+        // 5. Approvals from start to Director
+        $request->approve($finance, $this->signature('finance'));
+        $request->approve($accountingStaff, $this->signature('accounting_staff'));
+        $request->approve($spv, $this->signature('spv'));
+        $this->assertEquals(PurchaseRequestStatus::PendingDirector, $request->status);
+
+        // 6. Director approves final
+        $this->assertTrue($request->canBeApprovedBy($director));
+        $request->approve($director, $this->signature('director'));
+        $this->assertEquals(PurchaseRequestStatus::Approved, $request->status);
+    }
+
+    public function test_approvers_cannot_modify_requester_fields_and_only_submitter_can_edit_when_rejected(): void
+    {
+        $requester = $this->userWithEmployee('Pemohon Asli', 'staff', 'sales');
+        $finance = $this->userWithPosition(SignaturePosition::Finance);
+
+        $request = $this->createPurchaseRequest([
+            'requested_by' => $requester->id,
+            'title' => 'Judul Asli Pemohon',
+            'pay_to' => 'Penerima Asli',
+            'user_signature' => $this->signature(),
+            'status' => PurchaseRequestStatus::PendingFinance,
+        ]);
+
+        // When Finance views edit page, submitter fields are disabled:
+        $this->actingAs($finance);
+
+        Livewire::test(EditPurchaseRequest::class, ['record' => $request->getRouteKey()])
+            ->assertOk()
+            ->assertFormFieldDisabled('title')
+            ->assertFormFieldDisabled('pay_to')
+            ->assertFormFieldDisabled('bank_merchant_name')
+            ->assertFormFieldDisabled('account_number')
+            ->assertFormFieldDisabled('description')
+            ->assertFormFieldEnabled('finance_signature');
+
+        // When rejected, requester can edit submitter fields:
+        $request->reject($finance, 'Tolong perbaiki');
+
+        $this->actingAs($requester);
+
+        Livewire::test(EditPurchaseRequest::class, ['record' => $request->getRouteKey()])
+            ->assertOk()
+            ->assertFormFieldEnabled('title')
+            ->assertFormFieldEnabled('pay_to')
+            ->assertFormFieldEnabled('bank_merchant_name')
+            ->assertFormFieldEnabled('account_number')
+            ->assertFormFieldEnabled('description');
+    }
+
+    public function test_approver_from_different_division_can_sign_without_purchase_tipe_validation_error(): void
+    {
+        PurchaseRequestType::create([
+            'division' => 'it',
+            'name' => 'Barang',
+            'sort_order' => 1,
+        ]);
+
+        PurchaseRequestType::create([
+            'division' => 'finance',
+            'name' => 'Pengembalian Dana',
+            'sort_order' => 1,
+        ]);
+
+        $financeUser = $this->userWithEmployee('Selvi Rahmawati', 'senior', 'finance');
+
+        $request = $this->createPurchaseRequest([
+            'division' => 'it',
+            'purchase_tipe' => 'Barang',
+            'pay_to' => 'PT Vendor IT',
+            'bank_merchant_name' => 'Bank Mandiri',
+            'account_number' => '987654321',
+            'user_signature' => $this->signature('requester'),
+            'status' => PurchaseRequestStatus::PendingFinance,
+        ]);
+
+        $this->actingAs($financeUser);
+
+        Livewire::test(EditPurchaseRequest::class, ['record' => $request->getRouteKey()])
+            ->assertOk()
+            ->fillForm([
+                'finance_signature' => $this->signature('finance'),
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $request->refresh();
+        $this->assertEquals(PurchaseRequestStatus::PendingAccounting, $request->status);
+        $this->assertNotNull($request->finance_signature);
+    }
+
     private function userWithPosition(SignaturePosition $position): User
     {
         return User::factory()->create([
@@ -184,6 +320,7 @@ class PurchaseRequestSignatureTest extends TestCase
                 SignaturePosition::Finance => ['position' => 'senior', 'division' => 'finance'],
                 SignaturePosition::Accounting => ['position' => 'staff', 'division' => 'accounting'],
                 SignaturePosition::AccountingSpv => ['position' => 'supervisor', 'division' => 'accounting'],
+                SignaturePosition::Reviewer => ['position' => 'manager', 'division' => 'bod'],
                 SignaturePosition::Director => ['position' => 'director', 'division' => 'bod'],
             })->id,
         ]);

@@ -1,4 +1,4 @@
-Berdasarkan gambar ERD (Entity-Relationship Diagram) dari database aplikasi Laravel yang Anda bagikan, secara umum struktur tabelnya sudah cukup rapi untuk aplikasi sistem manajemen perusahaan atau pengadaan (procurement/purchase request). Namun, jika ditinjau dari sisi desain basis data, efisiensi, dan normalisasi, ada beberapa catatan penting dan potensi masalah (red flags) yang perlu diperhatikan:   
+<!-- Berdasarkan gambar ERD (Entity-Relationship Diagram) dari database aplikasi Laravel yang Anda bagikan, secara umum struktur tabelnya sudah cukup rapi untuk aplikasi sistem manajemen perusahaan atau pengadaan (procurement/purchase request). Namun, jika ditinjau dari sisi desain basis data, efisiensi, dan normalisasi, ada beberapa catatan penting dan potensi masalah (red flags) yang perlu diperhatikan:   
 image_f161a4.jpg
 1. Evaluasi Struktur Tabel dan Kolom (Hal yang Sudah Bagus & Perlu Diperbaiki)
 
@@ -57,4 +57,4 @@ Kesimpulan & Saran Perbaikan
 
         Hubungan antar tabel bisnis utamanya sudah ada, tetapi perlu dievaluasi ulang pada bagian penyimpanan data berbasis JSON apakah lebih baik diubah menjadi relasi tabel normal (One-to-Many).
 
-        Bersihkan tampilan ERD dari tabel-tabel system log/cache Laravel agar Anda bisa mengevaluasi relasi antar entitas bisnis dengan lebih jernih.
+        Bersihkan tampilan ERD dari tabel-tabel system log/cache Laravel agar Anda bisa mengevaluasi relasi antar entitas bisnis dengan lebih jernih. -->

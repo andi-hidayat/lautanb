@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Employee;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 
 class EmployeeSeeder extends Seeder
@@ -90,8 +91,16 @@ class EmployeeSeeder extends Seeder
             ],
         ];
 
-        foreach ($staticEmployees as $employee) {
-            Employee::create($employee);
+        foreach ($staticEmployees as $employeeData) {
+            $employee = Employee::create($employeeData);
+
+            User::firstOrCreate(
+                ['email' => $employeeData['email']],
+                [
+                    'employee_id' => $employee->id,
+                    'password' => 'password',
+                ],
+            );
         }
 
         // 2. Membuat Data Dummy Otomatis (Opsional, misal 10 data)

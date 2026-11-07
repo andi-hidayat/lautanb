@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\PurchaseRequests\Schemas;
 
+use App\Enums\PurchaseRequestStatus;
 use App\Enums\SignaturePosition;
 use App\Models\Employee;
 use App\Models\PurchasePlan;
@@ -24,6 +25,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\HtmlString;
 use Saade\FilamentAutograph\Forms\Components\SignaturePad;
@@ -34,6 +36,46 @@ class PurchaseRequestForm
     {
         return $schema
             ->components([
+                Placeholder::make('rejection_alert')
+                    ->hiddenLabel()
+                    ->visible(fn (?PurchaseRequest $record): bool => $record !== null && $record->status === PurchaseRequestStatus::Rejected)
+                    ->content(function (?PurchaseRequest $record): HtmlString {
+                        if ($record === null || $record->status !== PurchaseRequestStatus::Rejected) {
+                            return new HtmlString('');
+                        }
+
+                        $rejectorName = $record->rejector?->name ?? 'Approver';
+                        $stageName = match ($record->rejected_at_stage) {
+                            'finance' => 'Senior Finance',
+                            'accounting' => 'Accounting Staff',
+                            'accounting_spv' => 'Accounting SPV',
+                            'director' => 'Direktur',
+                            default => 'Approver',
+                        };
+                        $rejectedAt = $record->rejected_at ? $record->rejected_at->format('d M Y H:i') : '-';
+                        $reason = e($record->rejection_reason ?? 'Tidak ada catatan alasan.');
+
+                        return new HtmlString('
+                            <div class="mb-4 rounded-xl border border-red-300 bg-red-50 p-4 text-red-900 shadow-sm dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                                <div class="flex items-center gap-2 font-bold text-base text-red-700 dark:text-red-400">
+                                    <svg class="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                                    </svg>
+                                    <span>Permintaan Memerlukan Perbaikan (Ditolak oleh '.$stageName.' - '.$rejectorName.')</span>
+                                </div>
+                                <div class="mt-2 text-sm">
+                                    <span class="font-semibold">Catatan / Alasan Penolakan:</span>
+                                    <div class="mt-1 rounded-lg bg-white/70 p-3 text-gray-800 border border-red-200 dark:bg-gray-900/60 dark:text-gray-200 dark:border-red-900/50 whitespace-pre-line font-medium">'.$reason.'</div>
+                                </div>
+                                <div class="mt-2 flex items-center justify-between text-xs text-red-600 dark:text-red-400">
+                                    <span>Waktu Penolakan: '.$rejectedAt.'</span>
+                                    <span class="font-semibold">Silakan perbaiki data di bawah, lalu klik "Simpan & Ajukan Ulang"</span>
+                                </div>
+                            </div>
+                        ');
+                    })
+                    ->columnSpanFull(),
+
                 // Header Section Proporsional (Logo & Nama PT, Judul Form, Info Dokumen)
                 Grid::make([
                     'default' => 12,
@@ -112,6 +154,7 @@ class PurchaseRequestForm
 
                 TextInput::make('title')
                     ->label('Purchase Title')
+                    ->disabled(fn (?PurchaseRequest $record): bool => ! self::canEditRequesterFields($record))
                     ->required(),
                 Select::make('requested_by')
                     ->relationship('requestedBy', 'email', fn ($query) => $query->with('employee'))
@@ -119,12 +162,13 @@ class PurchaseRequestForm
                     ->searchable()
                     ->preload()
                     ->default(fn () => Auth::id())
-                    ->disabled(fn (string $operation) => $operation === 'create')  // lock saat create
+                    ->disabled(fn (string $operation, ?PurchaseRequest $record): bool => $operation === 'create' || ! self::canEditRequesterFields($record))
                     ->dehydrated()
                     ->live(),
                 TextInput::make('needed_at')
                     ->label('Waktu Pengajuan')
                     ->readOnly()
+                    ->disabled(fn (?PurchaseRequest $record): bool => ! self::canEditRequesterFields($record))
                     ->dehydrated()
                     ->default(fn () => now()->setTimezone(config('app.timezone', 'Asia/Jakarta'))->format('Y-m-d H:i:s'))
                     ->extraAttributes([
@@ -135,37 +179,50 @@ class PurchaseRequestForm
                     ]),
                 Select::make('purchase_tipe')
                     ->label('Purchase Tipe')
-                    ->options(function (): array {
-                        $division = Auth::user()?->division;
+                    ->disabled(fn (?PurchaseRequest $record): bool => ! self::canEditRequesterFields($record))
+                    ->options(function (?PurchaseRequest $record, Get $get): array {
+                        $division = $record?->division
+                            ?? ($get('requested_by') ? User::find($get('requested_by'))?->division : null)
+                            ?? Auth::user()?->division;
+
+                        $options = [];
 
                         if ($division) {
                             $options = PurchaseRequestType::optionsForDivision($division);
-
-                            if (! empty($options)) {
-                                return $options;
-                            }
                         }
 
-                        // Fallback to the 'default' set when the user's division has no specific types
-                        return PurchaseRequestType::optionsForDivision('default');
+                        if (empty($options)) {
+                            // Fallback to the 'default' set when the user's division has no specific types
+                            $options = PurchaseRequestType::optionsForDivision('default');
+                        }
+
+                        if ($record?->purchase_tipe && ! isset($options[$record->purchase_tipe])) {
+                            $options[$record->purchase_tipe] = $record->purchase_tipe;
+                        }
+
+                        return $options;
                     })
                     ->native(false),
 
                 Textarea::make('description')
                     ->rows(7)
+                    ->disabled(fn (?PurchaseRequest $record): bool => ! self::canEditRequesterFields($record))
                     ->columnSpanFull(),
                 Grid::make(3)
                     ->schema([
                         TextInput::make('pay_to')
                             ->label('Pay To')
+                            ->disabled(fn (?PurchaseRequest $record): bool => ! self::canEditRequesterFields($record))
                             ->required()
                             ->columnSpan(1),
                         TextInput::make('bank_merchant_name')
                             ->label('Bank / Merchant')
+                            ->disabled(fn (?PurchaseRequest $record): bool => ! self::canEditRequesterFields($record))
                             ->required()
                             ->columnSpan(1),
                         TextInput::make('account_number')
                             ->label('Bank / Merchant Account Number')
+                            ->disabled(fn (?PurchaseRequest $record): bool => ! self::canEditRequesterFields($record))
                             ->required()
                             ->columnSpan(1),
                     ])
@@ -183,6 +240,8 @@ class PurchaseRequestForm
                     ->reorderable(false)
                     ->minItems(1)
                     ->defaultItems(1)
+                    ->addable(fn (?Model $record): bool => self::canEditRequesterFields($record))
+                    ->deletable(fn (?Model $record): bool => self::canEditRequesterFields($record))
                     ->deleteAction(
                         fn (Action $action): Action => $action
                             ->visible(fn (Repeater $component): bool => count($component->getRawState() ?? []) > 1)
@@ -194,11 +253,13 @@ class PurchaseRequestForm
                                 TextInput::make('item_required_name')
                                     ->label('Purchase Item Name')
                                     ->required()
+                                    ->disabled(fn (?Model $record): bool => ! self::canEditRequesterFields($record))
                                     ->maxLength(255)
                                     ->columnSpan(2),
                                 TextInput::make('unit_price')
                                     ->label('Unit Price')
                                     ->required()
+                                    ->disabled(fn (?Model $record): bool => ! self::canEditRequesterFields($record))
                                     ->numeric(0, ',', '.')
                                     ->prefix('Rp')
                                     ->live(onBlur: false)
@@ -210,6 +271,7 @@ class PurchaseRequestForm
                                 TextInput::make('quantity')
                                     ->label('Quantity')
                                     ->required()
+                                    ->disabled(fn (?Model $record): bool => ! self::canEditRequesterFields($record))
                                     ->numeric(0, ',', '.')
                                     ->minValue(1)
                                     ->default(1)
@@ -220,6 +282,7 @@ class PurchaseRequestForm
                                     ->columnSpan(1),
                                 TextInput::make('reference')
                                     ->label('Reference')
+                                    ->disabled(fn (?Model $record): bool => ! self::canEditRequesterFields($record))
                                     ->nullable()
                                     ->maxLength(255),
 
@@ -258,14 +321,14 @@ class PurchaseRequestForm
                     ->schema([
                         Grid::make([
                             'default' => 1,
-                            'md' => fn (Get $get): int => self::submittedByAccounting($get) ? 4 : 5,
+                            'md' => 5,
                         ])
                             ->extraAttributes([
                                 'class' => 'gap-6 md:gap-x-8',
                             ])
                             ->schema(array_map(
                                 fn (SignaturePosition $position): SignaturePad => self::signaturePad($position),
-                                SignaturePosition::cases(),
+                                SignaturePosition::signingCases(),
                             )),
                     ])
                     ->columnSpanFull(),
@@ -273,23 +336,37 @@ class PurchaseRequestForm
     }
 
     /**
-     * Determine whether the submitted-by user belongs to the Accounting division.
-     * Used to hide the Accounting signature pads when an accounting staff submits the request.
+     * Determine whether the current user is permitted to edit the requester form fields.
+     * Approvers (Finance, Accounting, Accounting SPV, Director) can NEVER modify requester form fields.
+     * Only the original requester (submitter) can edit, and only when creating or when status is rejected (revision).
      */
-    private static function submittedByAccounting(Get $get): bool
+    public static function canEditRequesterFields(?Model $record): bool
     {
-        $requestedById = $get('requested_by');
+        if ($record instanceof PurchaseRequestItem) {
+            $record = $record->purchaseRequest;
+        }
 
-        if (blank($requestedById)) {
+        // On create page (record does not exist yet):
+        if (! ($record instanceof PurchaseRequest) || ! $record->exists) {
+            return true;
+        }
+
+        $currentUser = Auth::user();
+
+        if ($currentUser === null) {
             return false;
         }
 
-        $division = User::with('employee')
-            ->find($requestedById)
-            ?->employee
-            ?->division;
+        // Is the user the original submitter?
+        $isSubmitter = (int) $currentUser->id === (int) $record->requested_by;
 
-        return $division === 'accounting';
+        // Approvers can NEVER edit requester fields:
+        if (! $isSubmitter) {
+            return false;
+        }
+
+        // Submitter can only edit when the document needs revision (status is rejected):
+        return $record->status === PurchaseRequestStatus::Rejected;
     }
 
     /**
@@ -297,8 +374,6 @@ class PurchaseRequestForm
      */
     private static function signaturePad(SignaturePosition $position): SignaturePad
     {
-        $isAccountingPosition = $position === SignaturePosition::Accounting;
-
         return SignaturePad::make($position->signatureField())
             ->label($position->getLabel())
             ->exportBackgroundColor('#fff')
@@ -311,7 +386,6 @@ class PurchaseRequestForm
             ->extraFieldWrapperAttributes([
                 'class' => 'signature-pad-centered',
             ])
-            ->hidden(fn (Get $get): bool => $isAccountingPosition && self::submittedByAccounting($get))
             ->disabled(fn (Get $get, ?PurchaseRequest $record = null): bool => ! self::canSignPosition($position, $get, $record))
             ->helperText(fn (Get $get, ?PurchaseRequest $record = null): string => self::signatureHint($position, $get, $record))
             ->belowContent([
@@ -438,9 +512,10 @@ class PurchaseRequestForm
     {
         return match ($position) {
             SignaturePosition::Finance => ['senior', 'finance'],
-            SignaturePosition::Accounting => ['staff', 'accounting'],
             SignaturePosition::AccountingSpv => ['supervisor', 'accounting'],
+            SignaturePosition::Reviewer => ['manager', 'bod'],
             SignaturePosition::Director => ['director', 'bod'],
+            SignaturePosition::Accounting => ['staff', 'accounting'],
             SignaturePosition::User => throw new \LogicException('The requester does not have a division signer mapping.'),
         };
     }
@@ -548,8 +623,13 @@ class PurchaseRequestForm
             return false;
         }
 
-        // 2. On create page (record does not exist yet):
-        // Only User position can be signed. Finance, Accounting, Accounting SPV, Direktur cannot sign on create.
+        // 2. If record is rejected, signing is locked until resubmitted.
+        if ($record !== null && $record->status === PurchaseRequestStatus::Rejected) {
+            return false;
+        }
+
+        // 3. On create page (record does not exist yet):
+        // Only User position can be signed. Finance, Accounting SPV, Reviewer, Direktur cannot sign on create.
         if ($record === null || ! $record->exists) {
             if ($position !== SignaturePosition::User) {
                 return false;
@@ -560,20 +640,20 @@ class PurchaseRequestForm
                 || (bool) Auth::user()?->isStaff();
         }
 
-        // 3. On existing record:
+        // 4. On existing record:
         // User signature cannot be signed/changed if already persisted.
         if ($position === SignaturePosition::User) {
             return blank($record->getAttribute($position->signatureField()))
                 && (Auth::user()?->position === SignaturePosition::User->value || (int) $record->requested_by === (int) Auth::id() || (bool) Auth::user()?->isStaff());
         }
 
-        // 4. For approval positions (Finance, Accounting, Accounting SPV, Director):
-        // Current user must match this position.
-        if (! self::userMatchesPosition(Auth::user(), $position)) {
+        // 5. For approval positions (Finance, Accounting SPV, Reviewer, Director):
+        // Current user must match this position or be staff/admin.
+        if (! self::userMatchesPosition(Auth::user(), $position) && ! (bool) Auth::user()?->isStaff()) {
             return false;
         }
 
-        // 5. The previous position in sequence must have already signed.
+        // 6. The previous position in sequence must have already signed.
         $previousPosition = $position->previous();
 
         return $previousPosition === null || filled($get($previousPosition->signatureField()) ?? $record->getAttribute($previousPosition->signatureField()));
@@ -586,6 +666,10 @@ class PurchaseRequestForm
     {
         if (filled($record?->getAttribute($position->signatureField())) || filled($get($position->signatureField()))) {
             return 'Signed';
+        }
+
+        if ($record !== null && $record->status === PurchaseRequestStatus::Rejected) {
+            return 'Permintaan ditolak - menunggu perbaikan pemohon.';
         }
 
         if ($record === null || ! $record->exists) {

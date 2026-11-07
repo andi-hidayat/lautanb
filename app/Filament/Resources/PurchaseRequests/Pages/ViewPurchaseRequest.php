@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\PurchaseRequests\Pages;
 
+use App\Filament\Resources\PurchaseRequests\Actions\PurchaseRequestApprovalActions;
 use App\Filament\Resources\PurchaseRequests\PurchaseRequestResource;
 use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
@@ -13,6 +14,9 @@ class ViewPurchaseRequest extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            PurchaseRequestApprovalActions::makeApproveAction(),
+            PurchaseRequestApprovalActions::makeRejectAction(),
+            PurchaseRequestApprovalActions::makeResubmitAction(),
             EditAction::make(),
         ];
     }

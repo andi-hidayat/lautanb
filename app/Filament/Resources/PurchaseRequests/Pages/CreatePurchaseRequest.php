@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\PurchaseRequests\Pages;
 
 use App\Actions\PurchaseRequests\IssuePurchaseRequestDocument;
+use App\Enums\PurchaseRequestStatus;
 use App\Filament\Resources\PurchaseRequests\PurchaseRequestResource;
 use App\Models\User;
 use Filament\Resources\Pages\CreateRecord;
@@ -30,6 +31,7 @@ class CreatePurchaseRequest extends CreateRecord
 
             $data = [
                 ...$data,
+                'status' => PurchaseRequestStatus::PendingFinance,
                 ...app(IssuePurchaseRequestDocument::class)->forCreator($creator),
             ];
 

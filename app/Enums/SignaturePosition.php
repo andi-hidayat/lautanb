@@ -15,6 +15,23 @@ enum SignaturePosition: string implements HasColor, HasLabel
     case Accounting = 'accounting';
     case AccountingSpv = 'accounting_spv';
     case Director = 'director';
+    case Reviewer = 'reviewer';
+
+    /**
+     * Get the active signing sequence cases in execution order.
+     *
+     * @return array<int, self>
+     */
+    public static function signingCases(): array
+    {
+        return [
+            self::User,
+            self::Finance,
+            self::Accounting,
+            self::AccountingSpv,
+            self::Director,
+        ];
+    }
 
     public function getLabel(): string
     {
@@ -24,6 +41,7 @@ enum SignaturePosition: string implements HasColor, HasLabel
             self::Accounting => 'Accounting',
             self::AccountingSpv => 'Accounting SPV',
             self::Director => 'Director',
+            self::Reviewer => 'Reviewer',
         };
     }
 
@@ -35,6 +53,7 @@ enum SignaturePosition: string implements HasColor, HasLabel
             self::Accounting => 'warning',
             self::AccountingSpv => 'success',
             self::Director => 'primary',
+            self::Reviewer => 'gray',
         };
     }
 
@@ -49,6 +68,7 @@ enum SignaturePosition: string implements HasColor, HasLabel
             self::Accounting => 'accounting_signature',
             self::AccountingSpv => 'accounting_spv_signature',
             self::Director => 'director_signature',
+            self::Reviewer => 'reviewer_signature',
         };
     }
 
@@ -57,9 +77,29 @@ enum SignaturePosition: string implements HasColor, HasLabel
      */
     public function previous(): ?self
     {
-        $index = array_search($this, self::cases(), strict: true);
+        return match ($this) {
+            self::User => null,
+            self::Finance => self::User,
+            self::Accounting => self::Finance,
+            self::AccountingSpv => self::Accounting,
+            self::Director => self::AccountingSpv,
+            self::Reviewer => self::AccountingSpv,
+        };
+    }
 
-        return $index > 0 ? self::cases()[$index - 1] : null;
+    /**
+     * Get the position that signs after this one.
+     */
+    public function next(): ?self
+    {
+        return match ($this) {
+            self::User => self::Finance,
+            self::Finance => self::Accounting,
+            self::Accounting => self::AccountingSpv,
+            self::AccountingSpv => self::Director,
+            self::Director => null,
+            self::Reviewer => self::Director,
+        };
     }
 
     /**
@@ -71,7 +111,7 @@ enum SignaturePosition: string implements HasColor, HasLabel
     {
         $options = [];
 
-        foreach (self::cases() as $position) {
+        foreach (self::signingCases() as $position) {
             $options[$position->value] = $position->getLabel();
         }
 
