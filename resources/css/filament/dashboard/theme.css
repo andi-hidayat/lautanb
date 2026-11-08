@@ -27,6 +27,12 @@
 
 /* ===================== SIGNATURE PADS ===================== */
 
+.purchase-request-signatures-grid > .fi-sc,
+.purchase-request-signatures-display > .fi-sc {
+    display: grid;
+    grid-template-columns: var(--cols-default);
+}
+
 /* Center label and content for signature pads */
 .signature-pad-centered .fi-fo-field-label {
     display: block;

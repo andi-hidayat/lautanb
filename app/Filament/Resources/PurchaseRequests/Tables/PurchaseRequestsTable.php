@@ -3,10 +3,7 @@
 namespace App\Filament\Resources\PurchaseRequests\Tables;
 
 use App\Enums\PurchaseRequestStatus;
-use App\Filament\Resources\PurchaseRequests\Actions\PurchaseRequestApprovalActions;
 use App\Models\PurchaseRequest;
-use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
@@ -54,16 +51,9 @@ class PurchaseRequestsTable
                 //
             ])
             ->recordActions([
-                PurchaseRequestApprovalActions::makeApproveAction(),
-                PurchaseRequestApprovalActions::makeRejectAction(),
-                PurchaseRequestApprovalActions::makeResubmitAction(),
                 ViewAction::make(),
-                EditAction::make(),
-            ])
-            ->toolbarActions([
-                BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                ]),
+                EditAction::make()
+                    ->visible(fn (PurchaseRequest $record): bool => ! $record->isFullyApprovedAndSigned()),
             ]);
     }
 }

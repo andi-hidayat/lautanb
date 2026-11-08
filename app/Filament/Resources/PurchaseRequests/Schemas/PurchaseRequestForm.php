@@ -54,22 +54,41 @@ class PurchaseRequestForm
                         };
                         $rejectedAt = $record->rejected_at ? $record->rejected_at->format('d M Y H:i') : '-';
                         $reason = e($record->rejection_reason ?? 'Tidak ada catatan alasan.');
+                        $escapedRejectorName = e($rejectorName);
+                        $escapedStageName = e($stageName);
 
                         return new HtmlString('
-                            <div class="mb-4 rounded-xl border border-red-300 bg-red-50 p-4 text-red-900 shadow-sm dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
-                                <div class="flex items-center gap-2 font-bold text-base text-red-700 dark:text-red-400">
-                                    <svg class="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                                    </svg>
-                                    <span>Permintaan Memerlukan Perbaikan (Ditolak oleh '.$stageName.' - '.$rejectorName.')</span>
+                            <div class="mb-4 overflow-hidden rounded-xl border border-red-200 bg-white text-gray-900 shadow-sm dark:border-red-900/70 dark:bg-gray-900 dark:text-gray-100">
+                                <div class="flex items-start gap-3 bg-red-50/80 px-4 py-4 dark:bg-red-950/30 sm:px-5">
+                                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700 dark:bg-red-900/60 dark:text-red-300">
+                                        <svg class="h-5 w-5" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                                        </svg>
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <h2 class="text-base font-semibold leading-6 text-red-900 dark:text-red-200">Permintaan memerlukan perbaikan</h2>
+                                        <p class="mt-1 text-sm leading-5 text-gray-600 dark:text-gray-300">Ditolak oleh <span class="font-semibold text-gray-900 dark:text-white">'.$escapedRejectorName.'</span> <span class="text-gray-500 dark:text-gray-400">· '.$escapedStageName.'</span></p>
+                                    </div>
                                 </div>
-                                <div class="mt-2 text-sm">
-                                    <span class="font-semibold">Catatan / Alasan Penolakan:</span>
-                                    <div class="mt-1 rounded-lg bg-white/70 p-3 text-gray-800 border border-red-200 dark:bg-gray-900/60 dark:text-gray-200 dark:border-red-900/50 whitespace-pre-line font-medium">'.$reason.'</div>
-                                </div>
-                                <div class="mt-2 flex items-center justify-between text-xs text-red-600 dark:text-red-400">
-                                    <span>Waktu Penolakan: '.$rejectedAt.'</span>
-                                    <span class="font-semibold">Silakan perbaiki data di bawah, lalu klik "Simpan & Ajukan Ulang"</span>
+                                <div class="space-y-4 px-4 py-4 sm:px-5">
+                                    <div>
+                                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Catatan / alasan penolakan</p>
+                                        <div class="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-800 whitespace-pre-line break-words dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">'.$reason.'</div>
+                                    </div>
+                                    <div class="flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
+                                        <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                                            <svg class="h-4 w-4 shrink-0" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />
+                                            </svg>
+                                            <span>Waktu penolakan: <span class="font-medium text-gray-700 dark:text-gray-200">'.$rejectedAt.'</span></span>
+                                        </div>
+                                        <div class="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm leading-5 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 sm:max-w-md">
+                                            <svg class="mt-0.5 h-4 w-4 shrink-0" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                                            </svg>
+                                            <p>Perbaiki data di bawah, lalu klik <span class="font-semibold">Simpan &amp; Ajukan Ulang</span>.</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         ');
@@ -317,22 +336,28 @@ class PurchaseRequestForm
                     ])
                     ->columnSpanFull(),
 
-                Section::make('Signatures')
-                    ->schema([
-                        Grid::make([
-                            'default' => 1,
-                            'md' => 5,
-                        ])
-                            ->extraAttributes([
-                                'class' => 'gap-6 md:gap-x-8',
-                            ])
-                            ->schema(array_map(
-                                fn (SignaturePosition $position): SignaturePad => self::signaturePad($position),
-                                SignaturePosition::signingCases(),
-                            )),
-                    ])
-                    ->columnSpanFull(),
+                self::signatureSection(),
             ]);
+    }
+
+    public static function signatureSection(): Section
+    {
+        return Section::make('Signatures')
+            ->schema([
+                Grid::make()
+                    ->columns([
+                        'default' => 5,
+                        'md' => 5,
+                    ])
+                    ->extraAttributes([
+                        'class' => 'purchase-request-signatures-grid gap-6 md:gap-x-8',
+                    ])
+                    ->schema(array_map(
+                        fn (SignaturePosition $position): SignaturePad => self::signaturePad($position),
+                        SignaturePosition::signingCases(),
+                    )),
+            ])
+            ->columnSpanFull();
     }
 
     /**
@@ -479,7 +504,7 @@ class PurchaseRequestForm
             ]);
     }
 
-    private static function signerName(SignaturePosition $position, mixed $requestedById): string
+    public static function signerName(SignaturePosition $position, mixed $requestedById): string
     {
         if ($position === SignaturePosition::User) {
             $requesterName = User::with('employee')->find($requestedById)?->name;
@@ -626,6 +651,16 @@ class PurchaseRequestForm
         // 2. If record is rejected, signing is locked until resubmitted.
         if ($record !== null && $record->status === PurchaseRequestStatus::Rejected) {
             return false;
+        }
+
+        if ($record !== null && $record->exists) {
+            if ($position === SignaturePosition::User) {
+                if ($record->status !== PurchaseRequestStatus::PendingFinance) {
+                    return false;
+                }
+            } elseif ($record->status?->expectedSignaturePosition() !== $position) {
+                return false;
+            }
         }
 
         // 3. On create page (record does not exist yet):

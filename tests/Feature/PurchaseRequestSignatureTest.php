@@ -10,6 +10,7 @@ use App\Models\Employee;
 use App\Models\PurchaseRequest;
 use App\Models\PurchaseRequestType;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -209,27 +210,188 @@ class PurchaseRequestSignatureTest extends TestCase
         // 3. Accounting SPV rejects with reason
         $this->assertTrue($request->canBeRejectedBy($spv));
         $request->reject($spv, 'Harga satuan terlalu mahal, mohon negosiasi ulang');
-        $this->assertEquals(PurchaseRequestStatus::Rejected, $request->status);
-        $this->assertEquals('Harga satuan terlalu mahal, mohon negosiasi ulang', $request->rejection_reason);
-        $this->assertEquals($spv->id, $request->rejected_by);
+        $this->assertSame(PurchaseRequestStatus::Rejected, $request->status);
+        $this->assertSame('Harga satuan terlalu mahal, mohon negosiasi ulang', $request->rejection_reason);
+        $this->assertSame($spv->id, $request->rejected_by);
+        $this->assertDatabaseHas('purchase_request_approval_histories', [
+            'purchase_request_id' => $request->id,
+            'round' => 1,
+            'stage' => SignaturePosition::Finance->value,
+            'action' => 'approved',
+            'signature' => $this->signature('finance'),
+        ]);
+        $this->assertDatabaseHas('purchase_request_approval_histories', [
+            'purchase_request_id' => $request->id,
+            'round' => 1,
+            'stage' => SignaturePosition::Accounting->value,
+            'action' => 'approved',
+            'signature' => $this->signature('accounting_staff'),
+        ]);
+        $this->assertDatabaseHas('purchase_request_approval_histories', [
+            'purchase_request_id' => $request->id,
+            'round' => 1,
+            'stage' => SignaturePosition::AccountingSpv->value,
+            'action' => 'rejected',
+            'actor_id' => $spv->id,
+            'comments' => 'Harga satuan terlalu mahal, mohon negosiasi ulang',
+        ]);
 
         // 4. Requester resubmits -> returns to PendingFinance
         $this->assertTrue($request->canBeResubmittedBy($requester));
-        $request->resubmit();
-        $this->assertEquals(PurchaseRequestStatus::PendingFinance, $request->status);
+        $request->resubmit($requester);
+        $this->assertSame(PurchaseRequestStatus::PendingFinance, $request->status);
+        $this->assertSame(2, $request->approval_round);
         $this->assertNull($request->rejection_reason);
         $this->assertNull($request->finance_signature);
+        $this->assertNull($request->accounting_signature);
+        $this->assertNull($request->accounting_spv_signature);
+        $this->assertTrue($request->canBeApprovedBy($finance));
+        $this->assertFalse($request->canBeApprovedBy($accountingStaff));
+        $this->assertDatabaseHas('purchase_request_approval_histories', [
+            'purchase_request_id' => $request->id,
+            'round' => 1,
+            'stage' => SignaturePosition::User->value,
+            'action' => 'resubmitted',
+            'actor_id' => $requester->id,
+        ]);
 
         // 5. Approvals from start to Director
         $request->approve($finance, $this->signature('finance'));
         $request->approve($accountingStaff, $this->signature('accounting_staff'));
         $request->approve($spv, $this->signature('spv'));
-        $this->assertEquals(PurchaseRequestStatus::PendingDirector, $request->status);
+        $this->assertSame(PurchaseRequestStatus::PendingDirector, $request->status);
 
         // 6. Director approves final
         $this->assertTrue($request->canBeApprovedBy($director));
         $request->approve($director, $this->signature('director'));
-        $this->assertEquals(PurchaseRequestStatus::Approved, $request->status);
+        $this->assertSame(PurchaseRequestStatus::Approved, $request->status);
+        $this->assertDatabaseHas('purchase_request_approval_histories', [
+            'purchase_request_id' => $request->id,
+            'round' => 2,
+            'stage' => SignaturePosition::Director->value,
+            'action' => 'approved',
+            'actor_id' => $director->id,
+            'signature' => $this->signature('director'),
+        ]);
+    }
+
+    public function test_rejection_at_each_approval_stage_returns_to_requester_and_preserves_audit_history(): void
+    {
+        $requester = $this->userWithEmployee('Pemohon', 'staff', 'sales');
+        $approvers = [
+            PurchaseRequestStatus::PendingFinance->value => [
+                'status' => PurchaseRequestStatus::PendingFinance,
+                'position' => SignaturePosition::Finance,
+                'signatures' => [],
+            ],
+            PurchaseRequestStatus::PendingAccounting->value => [
+                'status' => PurchaseRequestStatus::PendingAccounting,
+                'position' => SignaturePosition::Accounting,
+                'signatures' => ['finance_signature' => $this->signature('finance')],
+            ],
+            PurchaseRequestStatus::PendingAccountingSpv->value => [
+                'status' => PurchaseRequestStatus::PendingAccountingSpv,
+                'position' => SignaturePosition::AccountingSpv,
+                'signatures' => [
+                    'finance_signature' => $this->signature('finance'),
+                    'accounting_signature' => $this->signature('accounting'),
+                ],
+            ],
+            PurchaseRequestStatus::PendingDirector->value => [
+                'status' => PurchaseRequestStatus::PendingDirector,
+                'position' => SignaturePosition::Director,
+                'signatures' => [
+                    'finance_signature' => $this->signature('finance'),
+                    'accounting_signature' => $this->signature('accounting'),
+                    'accounting_spv_signature' => $this->signature('accounting_spv'),
+                ],
+            ],
+        ];
+
+        foreach ($approvers as $stage) {
+            $approver = $this->userWithPosition($stage['position']);
+            $request = $this->createPurchaseRequest([
+                'requested_by' => $requester->id,
+                'user_signature' => $this->signature('requester'),
+                'status' => $stage['status'],
+                ...$stage['signatures'],
+            ]);
+
+            $request->reject($approver, 'Mohon revisi dan ajukan ulang.');
+
+            $this->assertTrue($request->canBeResubmittedBy($requester));
+            $this->assertFalse($request->canBeResubmittedBy($approver));
+            $request->resubmit($requester);
+
+            $this->assertSame(PurchaseRequestStatus::PendingFinance, $request->status);
+            $this->assertSame(2, $request->approval_round);
+            $this->assertNull($request->finance_signature);
+            $this->assertNull($request->accounting_signature);
+            $this->assertNull($request->accounting_spv_signature);
+            $this->assertNull($request->director_signature);
+            $this->assertDatabaseHas('purchase_request_approval_histories', [
+                'purchase_request_id' => $request->id,
+                'round' => 1,
+                'stage' => $stage['position']->value,
+                'action' => 'rejected',
+                'actor_id' => $approver->id,
+                'comments' => 'Mohon revisi dan ajukan ulang.',
+            ]);
+        }
+    }
+
+    public function test_a_rejected_request_cannot_be_resubmitted_by_an_approver(): void
+    {
+        $requester = User::factory()->create();
+        $finance = $this->userWithPosition(SignaturePosition::Finance);
+        $request = $this->createPurchaseRequest([
+            'requested_by' => $requester->id,
+            'user_signature' => $this->signature('requester'),
+            'status' => PurchaseRequestStatus::PendingFinance,
+        ]);
+        $request->reject($finance, 'Mohon lengkapi dokumen.');
+
+        $this->assertFalse($request->canBeResubmittedBy($finance));
+
+        try {
+            $request->resubmit($finance);
+        } catch (AuthorizationException) {
+            $this->assertDatabaseHas('purchase_requests', [
+                'id' => $request->id,
+                'status' => PurchaseRequestStatus::Rejected->value,
+                'rejection_reason' => 'Mohon lengkapi dokumen.',
+            ]);
+
+            return;
+        }
+
+        $this->fail('Only the requester may resubmit a rejected request.');
+    }
+
+    public function test_an_approver_cannot_skip_the_active_approval_stage(): void
+    {
+        $request = $this->createPurchaseRequest([
+            'user_signature' => $this->signature('requester'),
+            'status' => PurchaseRequestStatus::PendingFinance,
+        ]);
+        $accountingStaff = $this->userWithPosition(SignaturePosition::Accounting);
+
+        $this->assertFalse($request->canBeApprovedBy($accountingStaff));
+
+        try {
+            $request->approve($accountingStaff, $this->signature('accounting'));
+        } catch (AuthorizationException) {
+            $this->assertDatabaseHas('purchase_requests', [
+                'id' => $request->id,
+                'status' => PurchaseRequestStatus::PendingFinance->value,
+                'finance_signature' => null,
+            ]);
+            $this->assertDatabaseCount('purchase_request_approval_histories', 0);
+
+            return;
+        }
+
+        $this->fail('An approver from a later stage must not approve the request.');
     }
 
     public function test_approvers_cannot_modify_requester_fields_and_only_submitter_can_edit_when_rejected(): void

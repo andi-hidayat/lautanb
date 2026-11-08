@@ -3,14 +3,20 @@
 namespace App\Filament\Resources\PurchaseRequests\Schemas;
 
 use App\Enums\PurchaseRequestStatus;
+use App\Enums\SignaturePosition;
 use App\Filament\Resources\PurchaseRequests\Actions\PurchaseRequestApprovalActions;
 use App\Models\PurchaseRequest;
 use Filament\Infolists\Components\ImageEntry;
+use Filament\Infolists\Components\RepeatableEntry;
+use Filament\Infolists\Components\RepeatableEntry\TableColumn;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Alignment;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\HtmlString;
 
@@ -48,7 +54,7 @@ class PurchaseRequestInfolist
                                         </div>
                                         <div>
                                             <div class="text-base font-bold text-gray-900 dark:text-white">Saat ini giliran persetujuan Anda: <span class="text-blue-600 dark:text-blue-400">'.$positionName.'</span></div>
-                                            <div class="text-xs text-gray-600 dark:text-gray-300 mt-0.5">Silakan periksa detail pengeluaran dana di bawah ini, kemudian klik tombol hijau di bawah untuk menyetujui (approve), atau tombol merah untuk menolak (reject).</div>
+                                            <div class="text-xs text-gray-600 dark:text-gray-300 mt-0.5">Gunakan Tempel Otomatis atau Manual pada kolom tanda tangan, lalu klik Tanda Tangan & Setujui. Permintaan juga dapat ditolak melalui tombol Reject.</div>
                                         </div>
                                     </div>
                                 ');
@@ -56,9 +62,6 @@ class PurchaseRequestInfolist
                             ->columnSpanFull(),
 
                         Actions::make([
-                            PurchaseRequestApprovalActions::makeApproveAction()
-                                ->size('lg')
-                                ->button(),
                             PurchaseRequestApprovalActions::makeRejectAction()
                                 ->size('lg')
                                 ->button(),
@@ -154,32 +157,141 @@ class PurchaseRequestInfolist
                     ->columnSpanFull(),
 
                 Section::make('Tanda Tangan & Persetujuan')
+                    ->visible(fn (?PurchaseRequest $record): bool => $record !== null && ! $record->canBeApprovedBy(Auth::user()))
                     ->schema([
-                        Grid::make(5)
+                        Grid::make()
+                            ->columns([
+                                'default' => 5,
+                                'md' => 5,
+                            ])
+                            ->extraAttributes([
+                                'class' => 'purchase-request-signatures-display',
+                            ])
                             ->schema([
-                                ImageEntry::make('user_signature')
-                                    ->label('Submitted by')
-                                    ->placeholder('Belum ditandatangani')
-                                    ->height(80),
-                                ImageEntry::make('finance_signature')
-                                    ->label('Senior Finance')
-                                    ->placeholder('Menunggu Persetujuan')
-                                    ->height(80),
-                                ImageEntry::make('accounting_signature')
-                                    ->label('Accounting (Staff)')
-                                    ->placeholder('Menunggu Persetujuan')
-                                    ->height(80),
-                                ImageEntry::make('accounting_spv_signature')
-                                    ->label('Accounting SPV')
-                                    ->placeholder('Menunggu Persetujuan')
-                                    ->height(80),
-                                ImageEntry::make('director_signature')
-                                    ->label('Director')
-                                    ->placeholder('Menunggu Persetujuan')
-                                    ->height(80),
+                                ...array_map(
+                                    fn (SignaturePosition $position): Group => self::signerSignatureColumn($position),
+                                    SignaturePosition::signingCases(),
+                                ),
                             ]),
                     ])
                     ->columnSpanFull(),
+
+                EmbeddedSchema::make('form')
+                    ->columnSpanFull(),
+
+                Section::make('Riwayat Persetujuan & Revisi')
+                    ->visible(fn (?PurchaseRequest $record): bool => $record !== null && $record->approvalHistories()->exists())
+                    ->collapsed()
+                    ->schema([
+                        RepeatableEntry::make('approvalHistories')
+                            ->hiddenLabel()
+                            ->table([
+                                TableColumn::make('Putaran'),
+                                TableColumn::make('Tahap'),
+                                TableColumn::make('Aktivitas'),
+                                TableColumn::make('Pelaku'),
+                                TableColumn::make('Waktu'),
+                                TableColumn::make('Catatan'),
+                            ])
+                            ->schema([
+                                TextEntry::make('round')
+                                    ->label('Putaran'),
+                                TextEntry::make('stage')
+                                    ->label('Tahap')
+                                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                                        'user' => 'Pemohon',
+                                        'finance' => 'Senior Finance',
+                                        'accounting' => 'Accounting Staff',
+                                        'accounting_spv' => 'Accounting SPV',
+                                        'director' => 'Direktur',
+                                        default => (string) $state,
+                                    }),
+                                TextEntry::make('action')
+                                    ->label('Aktivitas')
+                                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                                        'approved' => 'Disetujui',
+                                        'rejected' => 'Ditolak',
+                                        'resubmitted' => 'Diajukan ulang',
+                                        default => (string) $state,
+                                    })
+                                    ->badge()
+                                    ->color(fn (?string $state): string => match ($state) {
+                                        'approved' => 'success',
+                                        'rejected' => 'danger',
+                                        'resubmitted' => 'warning',
+                                        default => 'gray',
+                                    }),
+                                TextEntry::make('actor.name')
+                                    ->label('Pelaku')
+                                    ->placeholder('Data lama'),
+                                TextEntry::make('acted_at')
+                                    ->label('Waktu')
+                                    ->dateTime(),
+                                TextEntry::make('comments')
+                                    ->label('Catatan')
+                                    ->placeholder('-'),
+                            ]),
+                    ])
+                    ->columnSpanFull(),
+            ]);
+    }
+
+    private static function signerNameEntry(SignaturePosition $position): TextEntry
+    {
+        return TextEntry::make($position->value.'_signer_name')
+            ->hiddenLabel()
+            ->alignment(Alignment::Center)
+            ->state(function (PurchaseRequest $record) use ($position): string {
+                if ($position === SignaturePosition::User) {
+                    return $record->requestedBy?->name ?? 'Nama belum tersedia';
+                }
+
+                $latestApproval = $record->approvalHistories
+                    ->where('round', $record->approval_round)
+                    ->where('stage', $position->value)
+                    ->where('action', 'approved')
+                    ->last();
+
+                return $latestApproval?->actor?->name
+                    ?? PurchaseRequestForm::signerName($position, $record->requested_by);
+            })
+            ->extraEntryWrapperAttributes([
+                'class' => 'w-full text-center',
+            ])
+            ->extraAttributes([
+                'class' => 'min-h-6 font-semibold text-gray-950 dark:text-white',
+            ]);
+    }
+
+    private static function signerSignatureColumn(SignaturePosition $position): Group
+    {
+        return Group::make([
+            TextEntry::make($position->value.'_signer_role')
+                ->hiddenLabel()
+                ->state(match ($position) {
+                    SignaturePosition::Accounting => 'Accounting (Staff)',
+                    default => $position->getLabel(),
+                })
+                ->alignment(Alignment::Center)
+                ->extraEntryWrapperAttributes([
+                    'class' => 'w-full text-center',
+                ])
+                ->extraAttributes([
+                    'class' => 'flex min-h-6 items-center justify-center font-semibold',
+                ]),
+            ImageEntry::make($position->signatureField())
+                ->hiddenLabel()
+                ->placeholder('Menunggu Persetujuan')
+                ->imageWidth(160)
+                ->imageHeight(80)
+                ->alignment(Alignment::Center)
+                ->extraEntryWrapperAttributes([
+                    'class' => 'w-full text-center',
+                ]),
+            self::signerNameEntry($position),
+        ])
+            ->extraAttributes([
+                'class' => 'purchase-request-signature-column flex flex-col items-stretch gap-1',
             ]);
     }
 }

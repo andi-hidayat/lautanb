@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
 class PurchaseRequestResource extends Resource
@@ -42,6 +43,12 @@ class PurchaseRequestResource extends Resource
     public static function table(Table $table): Table
     {
         return PurchaseRequestsTable::configure($table);
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return parent::canEdit($record)
+            && ! ($record instanceof PurchaseRequest && $record->isFullyApprovedAndSigned());
     }
 
     public static function getRelations(): array

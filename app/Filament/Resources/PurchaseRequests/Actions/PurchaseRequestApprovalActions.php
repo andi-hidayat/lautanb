@@ -7,49 +7,9 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
-use Saade\FilamentAutograph\Forms\Components\SignaturePad;
 
 class PurchaseRequestApprovalActions
 {
-    public static function makeApproveAction(): Action
-    {
-        return Action::make('approve')
-            ->label('Approve')
-            ->icon('heroicon-o-check-circle')
-            ->color('success')
-            ->visible(fn (PurchaseRequest $record): bool => $record->canBeApprovedBy(Auth::user()))
-            ->modalHeading(fn (PurchaseRequest $record): string => 'Approve Permintaan - '.$record->purchase_request_number)
-            ->modalDescription('Silakan konfirmasi persetujuan dan cantumkan tanda tangan Anda di bawah ini.')
-            ->modalSubmitActionLabel('Setujui Permintaan')
-            ->form([
-                SignaturePad::make('signature')
-                    ->label('Tanda Tangan')
-                    ->exportBackgroundColor('#fff')
-                    ->undoable(false)
-                    ->default(fn () => Auth::user()?->getSignatureDataUrl())
-                    ->helperText('Tanda tangan profil dimuat otomatis jika tersedia, atau gambar manual di canvas.')
-                    ->extraAttributes([
-                        'style' => 'touch-action: none; -ms-touch-action: none;',
-                    ])
-                    ->required(),
-            ])
-            ->action(function (array $data, PurchaseRequest $record): void {
-                $user = Auth::user();
-
-                if (! $user) {
-                    return;
-                }
-
-                $record->approve($user, $data['signature']);
-
-                Notification::make()
-                    ->title('Permintaan Berhasil Disetujui')
-                    ->body('Dokumen '.$record->purchase_request_number.' telah disetujui.')
-                    ->success()
-                    ->send();
-            });
-    }
-
     public static function makeRejectAction(): Action
     {
         return Action::make('reject')
@@ -96,7 +56,13 @@ class PurchaseRequestApprovalActions
             ->modalDescription('Pastikan Anda telah memperbaiki semua catatan revisi yang diminta. Permintaan akan kembali diajukan ke Senior Finance.')
             ->modalSubmitActionLabel('Ya, Ajukan Ulang')
             ->action(function (PurchaseRequest $record): void {
-                $record->resubmit();
+                $user = Auth::user();
+
+                if (! $user) {
+                    return;
+                }
+
+                $record->resubmit($user);
 
                 Notification::make()
                     ->title('Permintaan Diajukan Ulang')
