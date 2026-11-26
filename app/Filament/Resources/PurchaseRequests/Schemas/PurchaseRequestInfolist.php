@@ -36,14 +36,15 @@ class PurchaseRequestInfolist
                                     return new HtmlString('');
                                 }
 
-                                $positionName = match ($record->status) {
-                                    PurchaseRequestStatus::PendingFinance => 'Senior Finance (Selvi Rahmawati)',
-                                    PurchaseRequestStatus::PendingAccounting => 'Accounting Staff (Diana Lexy)',
-                                    PurchaseRequestStatus::PendingAccountingSpv => 'Accounting SPV (Tubagus Sururi)',
-                                    PurchaseRequestStatus::PendingDirector => 'Direktur (Kabal Yudhanegara)',
-                                    PurchaseRequestStatus::Rejected => 'Pemohon (Perlu Revisi)',
-                                    default => 'Approver',
-                                };
+                                $position = $record->status?->expectedSignaturePosition();
+                                $signerName = $position === null
+                                    ? null
+                                    : PurchaseRequestForm::signerName($position, $record->requested_by, $record);
+                                $positionName = $position?->getLabel() ?? 'Pemohon (Perlu Revisi)';
+
+                                if (filled($signerName) && $position !== SignaturePosition::User) {
+                                    $positionName .= ' ('.$signerName.')';
+                                }
 
                                 return new HtmlString('
                                     <div class="flex items-center gap-3">
@@ -87,13 +88,7 @@ class PurchaseRequestInfolist
                                     ->weight('bold'),
                                 TextEntry::make('rejected_at_stage')
                                     ->label('Tahapan Penolakan')
-                                    ->formatStateUsing(fn (?string $state): string => match ($state) {
-                                        'finance' => 'Senior Finance',
-                                        'accounting' => 'Accounting Staff',
-                                        'accounting_spv' => 'Accounting SPV',
-                                        'director' => 'Direktur',
-                                        default => (string) $state,
-                                    })
+                                    ->formatStateUsing(fn (?string $state): string => SignaturePosition::tryFrom((string) $state)?->getLabel() ?? (string) $state)
                                     ->badge()
                                     ->color('danger'),
                                 TextEntry::make('rejected_at')
@@ -158,7 +153,7 @@ class PurchaseRequestInfolist
 
                 Section::make('Tanda Tangan & Persetujuan')
                     ->visible(fn (?PurchaseRequest $record): bool => $record !== null && ! $record->canBeApprovedBy(Auth::user()))
-                    ->schema([
+                    ->schema(fn (?PurchaseRequest $record): array => [
                         Grid::make()
                             ->columns([
                                 'default' => 5,
@@ -167,12 +162,10 @@ class PurchaseRequestInfolist
                             ->extraAttributes([
                                 'class' => 'purchase-request-signatures-display',
                             ])
-                            ->schema([
-                                ...array_map(
-                                    fn (SignaturePosition $position): Group => self::signerSignatureColumn($position),
-                                    SignaturePosition::signingCases(),
-                                ),
-                            ]),
+                            ->schema(array_map(
+                                fn (SignaturePosition $position): Group => self::signerSignatureColumn($position),
+                                $record?->signingPositions() ?? [],
+                            )),
                     ])
                     ->columnSpanFull(),
 
@@ -200,11 +193,10 @@ class PurchaseRequestInfolist
                                     ->label('Tahap')
                                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                                         'user' => 'Pemohon',
-                                        'finance' => 'Senior Finance',
                                         'accounting' => 'Accounting Staff',
                                         'accounting_spv' => 'Accounting SPV',
                                         'director' => 'Direktur',
-                                        default => (string) $state,
+                                        default => SignaturePosition::tryFrom((string) $state)?->getLabel() ?? (string) $state,
                                     }),
                                 TextEntry::make('action')
                                     ->label('Aktivitas')
@@ -253,7 +245,7 @@ class PurchaseRequestInfolist
                     ->last();
 
                 return $latestApproval?->actor?->name
-                    ?? PurchaseRequestForm::signerName($position, $record->requested_by);
+                    ?? PurchaseRequestForm::signerName($position, $record->requested_by, $record);
             })
             ->extraEntryWrapperAttributes([
                 'class' => 'w-full text-center',

@@ -24,6 +24,15 @@ class PurchasePlanForm
             ->components([
                 Grid::make(2)
                     ->schema([
+                        Select::make('company')
+                            ->label('Company')
+                            ->options([
+                                'lbi' => 'LBI',
+                                'lba' => 'LBA',
+                            ])
+                            ->default(fn (): ?string => auth()->user()?->company ?? 'lbi')
+                            ->visible(fn (): bool => (bool) auth()->user()?->isStaff())
+                            ->required(),
                         TextInput::make('purchase_item_name')
                             ->label('Purchase Item Name')
                             ->required()

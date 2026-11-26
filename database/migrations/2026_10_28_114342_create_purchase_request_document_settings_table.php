@@ -13,7 +13,8 @@ return new class extends Migration
     {
         Schema::create('purchase_request_document_settings', function (Blueprint $table) {
             $table->id();
-            $table->string('division')->unique();
+            $table->string('company')->default('lbi')->index();
+            $table->string('division');
             $table->string('document_number');
             $table->string('revision_number');
             $table->date('effective_date');
@@ -21,6 +22,8 @@ return new class extends Migration
             $table->unsignedInteger('next_number')->default(1);
             $table->unsignedSmallInteger('sequence_year')->nullable();
             $table->timestamps();
+
+            $table->unique(['company', 'division']);
         });
     }
 

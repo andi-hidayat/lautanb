@@ -44,10 +44,76 @@ class PurchaseRequestSignatureTest extends TestCase
             ->assertFormComponentActionDoesNotExist('director_signature', 'use_profile_director');
     }
 
+    public function test_the_create_page_shows_all_lba_signature_pads_for_an_operational_request(): void
+    {
+        $user = User::factory()->create([
+            'employee_id' => Employee::factory()->create([
+                'company' => 'lba',
+                'division' => 'operational',
+            ])->id,
+            'can_create_pr_lbi' => false,
+            'can_create_pr_lba' => true,
+            'can_sign_pr_lbi' => false,
+            'can_sign_pr_lba' => true,
+        ]);
+        $this->actingAs($user);
+
+        Livewire::test(CreatePurchaseRequest::class)
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Submitted by',
+                'Finance LBA',
+                'Senior Finance',
+                'Accounting & Tax',
+                'OPS & Fleet Manager',
+                'Direktur 1',
+                'Direktur 2',
+                'Direktur Utama',
+            ])
+            ->assertFormFieldExists('user_signature')
+            ->assertFormFieldExists('finance_lba_signature')
+            ->assertFormFieldExists('finance_senior_lba_signature')
+            ->assertFormFieldExists('accounting_tax_signature')
+            ->assertFormFieldExists('ops_fleet_manager_signature')
+            ->assertFormFieldExists('director1_signature')
+            ->assertFormFieldExists('director2_signature')
+            ->assertFormFieldExists('director_main_signature');
+    }
+
+    public function test_signature_fields_update_when_the_company_changes_on_create(): void
+    {
+        $user = User::factory()->create([
+            'employee_id' => Employee::factory()->create([
+                'company' => 'lbi',
+                'division' => 'operational',
+            ])->id,
+            'can_create_pr_lbi' => true,
+            'can_create_pr_lba' => true,
+            'can_sign_pr_lbi' => true,
+            'can_sign_pr_lba' => true,
+        ]);
+        $this->actingAs($user);
+
+        Livewire::test(CreatePurchaseRequest::class)
+            ->assertOk()
+            ->assertSeeInOrder(['Senior Finance', 'Accounting', 'Accounting SPV', 'Director'])
+            ->assertDontSee('Finance LBA')
+            ->set('data.company', 'lba')
+            ->assertSeeInOrder([
+                'Finance LBA',
+                'Senior Finance',
+                'Accounting & Tax',
+                'OPS & Fleet Manager',
+                'Direktur 1',
+                'Direktur 2',
+                'Direktur Utama',
+            ]);
+    }
+
     public function test_the_create_page_shows_each_signers_name_and_hides_undo_actions(): void
     {
         $requester = $this->userWithEmployee('Requester Name', 'staff', 'sales');
-        $this->userWithEmployee('Finance Senior Name', 'senior', 'finance');
+        $this->userWithEmployee('Finance Senior Name', 'senior_staff', 'finance');
         $this->userWithEmployee('Accounting Staff Name', 'staff', 'accounting');
         $this->userWithEmployee('Accounting Supervisor Name', 'supervisor', 'accounting');
         $this->userWithEmployee('Director Name', 'director', 'bod');
@@ -166,6 +232,31 @@ class PurchaseRequestSignatureTest extends TestCase
         $this->assertEquals(PurchaseRequestStatus::PendingAccounting, $request->status);
     }
 
+    public function test_lba_approvers_need_lba_signature_permission(): void
+    {
+        $approver = User::factory()->create([
+            'employee_id' => Employee::factory()->create([
+                'name' => 'Dhya',
+                'position' => 'staff',
+                'division' => 'finance',
+            ])->id,
+            'can_sign_pr_lba' => false,
+        ]);
+        $request = $this->createPurchaseRequest([
+            'company' => 'lba',
+            'approval_flow' => 'lba',
+            'division' => 'operational',
+            'user_signature' => $this->signature('requester'),
+            'status' => PurchaseRequestStatus::PendingFinanceLba,
+        ]);
+
+        $this->assertFalse($request->canBeApprovedBy($approver));
+
+        $approver->update(['can_sign_pr_lba' => true]);
+
+        $this->assertTrue($request->canBeApprovedBy($approver));
+    }
+
     public function test_a_signature_cannot_be_changed_after_it_has_been_signed(): void
     {
         $request = $this->createPurchaseRequest([
@@ -196,6 +287,11 @@ class PurchaseRequestSignatureTest extends TestCase
             'user_signature' => $this->signature('requester'),
             'status' => PurchaseRequestStatus::PendingFinance,
         ]);
+
+        $this->assertSame('lbi', $request->company);
+        $this->assertTrue($request->hasSignature(SignaturePosition::User));
+        $this->assertTrue($finance->canSignPurchaseRequestsFor('lbi'));
+        $this->assertTrue($request->userMatchesPosition($finance, SignaturePosition::Finance));
 
         // 1. Finance approves -> moves to PendingAccounting
         $this->assertTrue($request->canBeApprovedBy($finance));
@@ -447,7 +543,7 @@ class PurchaseRequestSignatureTest extends TestCase
             'sort_order' => 1,
         ]);
 
-        $financeUser = $this->userWithEmployee('Selvi Rahmawati', 'senior', 'finance');
+        $financeUser = $this->userWithEmployee('Selvi Rahmawati', 'senior_staff', 'finance');
 
         $request = $this->createPurchaseRequest([
             'division' => 'it',
@@ -479,7 +575,7 @@ class PurchaseRequestSignatureTest extends TestCase
         return User::factory()->create([
             'employee_id' => Employee::factory()->create(match ($position) {
                 SignaturePosition::User => ['position' => 'staff', 'division' => 'sales'],
-                SignaturePosition::Finance => ['position' => 'senior', 'division' => 'finance'],
+                SignaturePosition::Finance => ['position' => 'senior_staff', 'division' => 'finance'],
                 SignaturePosition::Accounting => ['position' => 'staff', 'division' => 'accounting'],
                 SignaturePosition::AccountingSpv => ['position' => 'supervisor', 'division' => 'accounting'],
                 SignaturePosition::Reviewer => ['position' => 'manager', 'division' => 'bod'],
@@ -510,6 +606,8 @@ class PurchaseRequestSignatureTest extends TestCase
         $request = PurchaseRequest::create([
             'title' => 'Permintaan Laptop Baru',
             'requested_by' => User::factory()->create()->id,
+            'company' => 'lbi',
+            'approval_flow' => 'lbi',
             ...$attributes,
         ]);
 

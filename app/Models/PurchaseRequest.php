@@ -30,6 +30,13 @@ use Illuminate\Validation\ValidationException;
     'accounting_spv_signature',
     'reviewer_signature',
     'director_signature',
+    'finance_lba_signature',
+    'finance_senior_lba_signature',
+    'accounting_tax_signature',
+    'ops_fleet_manager_signature',
+    'director1_signature',
+    'director2_signature',
+    'director_main_signature',
     'rejection_reason',
     'rejected_by',
     'rejected_at',
@@ -40,6 +47,9 @@ use Illuminate\Validation\ValidationException;
     'issue_date',
     'effective_date',
     'purchase_request_number',
+    'company',
+    'approval_flow',
+    'approval_steps',
 ])]
 class PurchaseRequest extends Model
 {
@@ -113,12 +123,63 @@ class PurchaseRequest extends Model
     }
 
     /**
+     * Get the signature positions required for this request.
+     *
+     * @return array<int, SignaturePosition>
+     */
+    public function signingPositions(): array
+    {
+        return array_map(
+            static fn (array $step): SignaturePosition => SignaturePosition::from($step['stage']),
+            $this->approvalSteps(),
+        );
+    }
+
+    /**
+     * @return array<int, array{stage: string, approver_type: string, position: ?string, division: ?string, signer_name: ?string}>
+     */
+    public function approvalSteps(): array
+    {
+        $approvalSteps = $this->getAttribute('approval_steps');
+
+        return is_array($approvalSteps)
+            ? $approvalSteps
+            : PurchaseRequestDocumentSetting::defaultApprovalStepsFor(
+                $this->approval_flow === 'lba' ? 'lba' : (string) $this->company,
+                (string) $this->division,
+            );
+    }
+
+    /**
+     * @return array{stage: string, approver_type: string, position: ?string, division: ?string, signer_name: ?string}|null
+     */
+    public function approvalStep(SignaturePosition $position): ?array
+    {
+        foreach ($this->approvalSteps() as $step) {
+            if (($step['stage'] ?? null) === $position->value) {
+                return $step;
+            }
+        }
+
+        return null;
+    }
+
+    public function signerNameFor(SignaturePosition $position): ?string
+    {
+        $step = $this->approvalStep($position);
+
+        return $step === null
+            ? null
+            : PurchaseRequestDocumentSetting::signerNameForStep($step);
+    }
+
+    /**
      * Determine whether the request has completed approval and every required signature.
      */
     public function isFullyApprovedAndSigned(): bool
     {
         return $this->status === PurchaseRequestStatus::Approved
-            && collect(SignaturePosition::signingCases())
+            && collect($this->signingPositions())
                 ->every(fn (SignaturePosition $position): bool => $this->hasSignature($position));
     }
 
@@ -133,17 +194,18 @@ class PurchaseRequest extends Model
 
         $position = $this->status->expectedSignaturePosition();
 
-        if ($position === null) {
+        if ($position === null || ! in_array($position, $this->signingPositions(), true)) {
             return false;
         }
 
-        $previousPosition = $position->previous();
+        $previousPosition = $this->previousPosition($position);
 
         if ($previousPosition !== null && ! $this->hasSignature($previousPosition)) {
             return false;
         }
 
-        return $this->userMatchesPosition($user, $position) || (bool) $user->isStaff();
+        return $user->canSignPurchaseRequestsFor((string) $this->company)
+            && ($this->userMatchesPosition($user, $position) || $user->isStaff());
     }
 
     /**
@@ -163,7 +225,8 @@ class PurchaseRequest extends Model
             return false;
         }
 
-        return (int) $user->id === (int) $this->requested_by;
+        return (int) $user->id === (int) $this->requested_by
+            && $user->canCreatePurchaseRequestsFor((string) $this->company);
     }
 
     /**
@@ -171,18 +234,15 @@ class PurchaseRequest extends Model
      */
     public function userMatchesPosition(User $user, SignaturePosition $position): bool
     {
-        if ($user->position === $position->value) {
-            return true;
+        $step = $this->approvalStep($position);
+
+        if ($step === null) {
+            return false;
         }
 
-        return match ($position) {
-            SignaturePosition::Finance => $user->position === 'senior' && $user->division === 'finance',
-            SignaturePosition::AccountingSpv => $user->position === 'supervisor' && $user->division === 'accounting',
-            SignaturePosition::Reviewer => $user->position === 'manager' && $user->division === 'bod',
-            SignaturePosition::Director => $user->position === 'director' && $user->division === 'bod',
-            SignaturePosition::Accounting => $user->position === 'staff' && $user->division === 'accounting',
-            SignaturePosition::User => (int) $user->id === (int) $this->requested_by,
-        };
+        return $step['approver_type'] === 'requester'
+            ? (int) $user->id === (int) $this->requested_by
+            : PurchaseRequestDocumentSetting::stepMatchesUser($step, $user);
     }
 
     /**
@@ -209,7 +269,7 @@ class PurchaseRequest extends Model
                 throw new AuthorizationException('Permintaan ini tidak memiliki tahap persetujuan aktif.');
             }
 
-            $nextStatus = $request->status->nextStatus() ?? PurchaseRequestStatus::Approved;
+            $nextStatus = $request->nextStatusFor($position);
             $request->approvalHistories()->create([
                 'round' => $request->approval_round,
                 'stage' => $position->value,
@@ -280,7 +340,7 @@ class PurchaseRequest extends Model
     }
 
     /**
-     * Resubmit the rejected request back to Senior Finance.
+     * Resubmit the rejected request to the first approval stage.
      */
     public function resubmit(User $user): void
     {
@@ -301,14 +361,24 @@ class PurchaseRequest extends Model
                 'acted_at' => now(),
             ]);
 
+            $signatureData = [];
+
+            foreach ($request->signingPositions() as $position) {
+                if ($position !== SignaturePosition::User) {
+                    $signatureData[$position->signatureField()] = null;
+                }
+            }
+
+            $firstApprovalPosition = $request->signingPositions()[1] ?? null;
+
+            if ($firstApprovalPosition === null) {
+                throw new AuthorizationException('Permintaan ini tidak memiliki alur persetujuan yang dapat diajukan ulang.');
+            }
+
             $request->update([
-                'status' => PurchaseRequestStatus::PendingFinance,
+                ...$signatureData,
+                'status' => $request->statusForPosition($firstApprovalPosition),
                 'approval_round' => $request->approval_round + 1,
-                'finance_signature' => null,
-                'accounting_signature' => null,
-                'accounting_spv_signature' => null,
-                'reviewer_signature' => null,
-                'director_signature' => null,
                 'rejection_reason' => null,
                 'rejected_by' => null,
                 'rejected_at' => null,
@@ -321,7 +391,7 @@ class PurchaseRequest extends Model
 
     private function archiveCurrentApprovals(): void
     {
-        foreach (SignaturePosition::signingCases() as $position) {
+        foreach ($this->signingPositions() as $position) {
             if ($position === SignaturePosition::User) {
                 continue;
             }
@@ -344,6 +414,36 @@ class PurchaseRequest extends Model
                 'acted_at' => $this->updated_at ?? now(),
             ]);
         }
+    }
+
+    private function previousPosition(SignaturePosition $position): ?SignaturePosition
+    {
+        $positions = $this->signingPositions();
+        $index = array_search($position, $positions, true);
+
+        return $index === false || $index === 0 ? null : $positions[$index - 1];
+    }
+
+    private function nextStatusFor(SignaturePosition $position): PurchaseRequestStatus
+    {
+        $positions = $this->signingPositions();
+        $index = array_search($position, $positions, true);
+
+        if ($index === false) {
+            throw new AuthorizationException('Tahap persetujuan tidak ditemukan pada alur permintaan ini.');
+        }
+
+        $nextPosition = $positions[$index + 1] ?? null;
+
+        return $nextPosition === null
+            ? PurchaseRequestStatus::Approved
+            : $this->statusForPosition($nextPosition);
+    }
+
+    private function statusForPosition(SignaturePosition $position): PurchaseRequestStatus
+    {
+        return PurchaseRequestStatus::forSignaturePosition($position)
+            ?? throw new AuthorizationException('Tahap persetujuan tidak memiliki status yang valid.');
     }
 
     private function archiveCurrentRejection(): void
@@ -375,6 +475,7 @@ class PurchaseRequest extends Model
         return [
             'status' => PurchaseRequestStatus::class,
             'approval_round' => 'integer',
+            'approval_steps' => 'array',
             'needed_at' => 'date',
             'issue_date' => 'date',
             'effective_date' => 'date',

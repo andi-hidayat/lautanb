@@ -4,7 +4,6 @@ namespace App\Filament\Resources\PurchaseRequests\Schemas;
 
 use App\Enums\PurchaseRequestStatus;
 use App\Enums\SignaturePosition;
-use App\Models\Employee;
 use App\Models\PurchasePlan;
 use App\Models\PurchaseRequest;
 use App\Models\PurchaseRequestDocumentSetting;
@@ -103,13 +102,22 @@ class PurchaseRequestForm
                         // Kolom 1 (Kiri): Logo & Nama Perusahaan (3 Kolom = 25%)
                         Placeholder::make('company_logo')
                             ->hiddenLabel()
-                            ->content(new HtmlString('
-                                <div style="display: flex; flex-direction: column; align-items: center; justify-content: flex-start; text-align: center; height: 100%; padding-top: 2px;">
-                                    <img src="'.asset('images/lbilogo.svg').'" style="height: 80px; width: auto; max-width: 100%; object-fit: contain; margin-bottom: 8px;" alt="Logo PT Lautan Berkah Internasional">
-                                    <span style="font-weight: 700; font-size: 13px; line-height: 1.25; letter-spacing: 0.05em; text-transform: uppercase;" class="text-gray-900 dark:text-white">PT LAUTAN BERKAH</span>
-                                    <span style="font-weight: 700; font-size: 13px; line-height: 1.25; letter-spacing: 0.05em; text-transform: uppercase;" class="text-gray-900 dark:text-white">INTERNASIONAL</span>
-                                </div>
-                            '))
+                            ->content(function (Get $get, ?PurchaseRequest $record): HtmlString {
+                                $companyNameSuffix = self::selectedCompany($record, $get) === 'lba'
+                                    ? 'AMANAH'
+                                    : 'INTERNASIONAL';
+                                $companyName = 'PT LAUTAN BERKAH '.$companyNameSuffix;
+                                $escapedCompanyName = e($companyName);
+                                $escapedCompanyNameSuffix = e($companyNameSuffix);
+
+                                return new HtmlString('
+                                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: flex-start; text-align: center; height: 100%; padding-top: 2px;">
+                                        <img src="'.asset('images/company-logo.png').'" style="height: 80px; width: auto; max-width: 100%; object-fit: contain; margin-bottom: 8px;" alt="Logo '.$escapedCompanyName.'">
+                                        <span style="font-weight: 700; font-size: 13px; line-height: 1.25; letter-spacing: 0.05em; text-transform: uppercase;" class="text-gray-900 dark:text-white">PT LAUTAN BERKAH</span>
+                                        <span style="font-weight: 700; font-size: 13px; line-height: 1.25; letter-spacing: 0.05em; text-transform: uppercase;" class="text-gray-900 dark:text-white">'.$escapedCompanyNameSuffix.'</span>
+                                    </div>
+                                ');
+                            })
                             ->columnSpan([
                                 'default' => 3,
                             ]),
@@ -142,13 +150,13 @@ class PurchaseRequestForm
                                     ->dehydrated()
                                     ->hiddenLabel()
                                     ->prefix('Doc. Number')
-                                    ->default(fn (): ?string => self::currentDocumentSetting()?->document_number),
+                                    ->default(fn (Get $get): ?string => self::currentDocumentSetting($get('requested_by'), $get('company'))?->document_number),
                                 TextInput::make('revision_number')
                                     ->disabled()
                                     ->dehydrated()
                                     ->hiddenLabel()
                                     ->prefix('Rev. Number')
-                                    ->default(fn (): ?string => self::currentDocumentSetting()?->revision_number),
+                                    ->default(fn (Get $get): ?string => self::currentDocumentSetting($get('requested_by'), $get('company'))?->revision_number),
                                 TextInput::make('issue_date')
                                     ->disabled()
                                     ->dehydrated()
@@ -160,13 +168,16 @@ class PurchaseRequestForm
                                     ->dehydrated()
                                     ->hiddenLabel()
                                     ->prefix('Effective Date')
-                                    ->default(fn (): ?string => self::currentDocumentSetting()?->effective_date?->toDateString()),
+                                    ->default(fn (Get $get): ?string => self::currentDocumentSetting($get('requested_by'), $get('company'))?->effective_date?->toDateString()),
                                 TextInput::make('purchase_request_number')
                                     ->disabled()
                                     ->dehydrated()
                                     ->hiddenLabel()
                                     ->prefix('Number')
-                                    ->helperText('Nomor surat diterbitkan otomatis saat permintaan disimpan.'),
+                                    ->placeholder(fn (): string => blank(Auth::user()?->division)
+                                        ? 'Divisi belum disetel'
+                                        : 'Belum diatur')
+                                    ->default(fn (Get $get): ?string => self::previewPurchaseRequestNumber($get('requested_by'), $get('company'))),
                             ]),
                     ])
                     ->columnSpanFull(),
@@ -175,6 +186,22 @@ class PurchaseRequestForm
                     ->label('Purchase Title')
                     ->disabled(fn (?PurchaseRequest $record): bool => ! self::canEditRequesterFields($record))
                     ->required(),
+                Select::make('company')
+                    ->label('Company')
+                    ->options(fn (): array => self::purchaseRequestCompanyOptions())
+                    ->default(fn (): ?string => self::defaultPurchaseRequestCompany())
+                    ->required()
+                    ->live()
+                    ->dehydrated()
+                    ->dehydratedWhenHidden()
+                    ->visible(fn (string $operation): bool => $operation === 'create' && count(self::purchaseRequestCompanyOptions()) > 1)
+                    ->afterStateUpdated(function (Get $get, Set $set, ?string $state): void {
+                        $setting = self::currentDocumentSetting($get('requested_by'), $state);
+                        $set('document_number', $setting?->document_number);
+                        $set('revision_number', $setting?->revision_number);
+                        $set('effective_date', $setting?->effective_date?->toDateString());
+                        $set('purchase_request_number', $setting?->formatPurchaseRequestNumber());
+                    }),
                 Select::make('requested_by')
                     ->relationship('requestedBy', 'email', fn ($query) => $query->with('employee'))
                     ->getOptionLabelUsing(fn ($value) => User::with('employee')->find($value)?->employee?->name)
@@ -200,19 +227,23 @@ class PurchaseRequestForm
                     ->label('Purchase Tipe')
                     ->disabled(fn (?PurchaseRequest $record): bool => ! self::canEditRequesterFields($record))
                     ->options(function (?PurchaseRequest $record, Get $get): array {
+                        $requestedBy = $get('requested_by')
+                            ? User::find($get('requested_by'))
+                            : null;
+                        $company = self::selectedCompany($record, $get);
                         $division = $record?->division
-                            ?? ($get('requested_by') ? User::find($get('requested_by'))?->division : null)
+                            ?? $requestedBy?->division
                             ?? Auth::user()?->division;
 
                         $options = [];
 
                         if ($division) {
-                            $options = PurchaseRequestType::optionsForDivision($division);
+                            $options = PurchaseRequestType::optionsForDivision($division, $company);
                         }
 
                         if (empty($options)) {
                             // Fallback to the 'default' set when the user's division has no specific types
-                            $options = PurchaseRequestType::optionsForDivision('default');
+                            $options = PurchaseRequestType::optionsForDivision('default', $company);
                         }
 
                         if ($record?->purchase_tipe && ! isset($options[$record->purchase_tipe])) {
@@ -343,7 +374,7 @@ class PurchaseRequestForm
     public static function signatureSection(): Section
     {
         return Section::make('Signatures')
-            ->schema([
+            ->schema(fn (Get $get, ?PurchaseRequest $record = null): array => [
                 Grid::make()
                     ->columns([
                         'default' => 5,
@@ -354,7 +385,7 @@ class PurchaseRequestForm
                     ])
                     ->schema(array_map(
                         fn (SignaturePosition $position): SignaturePad => self::signaturePad($position),
-                        SignaturePosition::signingCases(),
+                        SignaturePosition::allSigningCases(),
                     )),
             ])
             ->columnSpanFull();
@@ -391,7 +422,8 @@ class PurchaseRequestForm
         }
 
         // Submitter can only edit when the document needs revision (status is rejected):
-        return $record->status === PurchaseRequestStatus::Rejected;
+        return $record->status === PurchaseRequestStatus::Rejected
+            && $currentUser->canCreatePurchaseRequestsFor((string) $record->company);
     }
 
     /**
@@ -401,6 +433,11 @@ class PurchaseRequestForm
     {
         return SignaturePad::make($position->signatureField())
             ->label($position->getLabel())
+            ->visible(fn (Get $get, ?PurchaseRequest $record = null): bool => in_array(
+                $position,
+                self::signingPositionsFor($record, $get),
+                true,
+            ))
             ->exportBackgroundColor('#fff')
             ->undoable(false)
             ->live()
@@ -416,7 +453,12 @@ class PurchaseRequestForm
             ->belowContent([
                 Placeholder::make($position->value.'_signer_name')
                     ->hiddenLabel()
-                    ->content(fn (Get $get): string => self::signerName($position, $get('requested_by')))
+                    ->content(fn (Get $get, ?PurchaseRequest $record = null): string => self::signerName(
+                        $position,
+                        $get('requested_by'),
+                        $record,
+                        self::selectedCompany($record, $get),
+                    ))
                     ->extraAttributes([
                         'class' => 'signature-pad-signer-name text-center font-semibold text-gray-950 dark:text-white',
                     ]),
@@ -430,7 +472,7 @@ class PurchaseRequestForm
                             return;
                         }
 
-                        $user = self::findUserForPosition($position, $get('requested_by'));
+                        $user = self::findUserForPosition($position, $get('requested_by'), $record);
                         $dataUrl = $user?->getSignatureDataUrl();
 
                         if (! $dataUrl) {
@@ -504,138 +546,143 @@ class PurchaseRequestForm
             ]);
     }
 
-    public static function signerName(SignaturePosition $position, mixed $requestedById): string
-    {
+    public static function signerName(
+        SignaturePosition $position,
+        mixed $requestedById,
+        ?PurchaseRequest $record = null,
+        ?string $company = null,
+    ): string {
         if ($position === SignaturePosition::User) {
             $requesterName = User::with('employee')->find($requestedById)?->name;
 
             return $requesterName ?? Auth::user()?->name ?? 'Nama belum tersedia';
         }
 
-        return self::findEmployeeForPosition($position)?->name ?? 'Nama belum tersedia';
-    }
+        $step = self::approvalStepFor($position, $record, $requestedById, $company);
 
-    private static function findEmployeeForPosition(SignaturePosition $position): ?Employee
-    {
-        [$employeePosition, $division] = self::employeeAttributesForPosition($position);
-
-        return Employee::query()
-            ->where('position', $employeePosition)
-            ->where('division', $division)
-            ->orderBy('id')
-            ->first()
-            ?? Employee::query()
-                ->where('position', $position->value)
-                ->orderBy('id')
-                ->first();
+        return $step === null
+            ? 'Nama belum tersedia'
+            : PurchaseRequestDocumentSetting::signerNameForStep($step) ?? 'Nama belum tersedia';
     }
 
     /**
-     * @return array{string, string}
+     * @return array{stage: string, approver_type: string, position: ?string, division: ?string, signer_name: ?string}|null
      */
-    private static function employeeAttributesForPosition(SignaturePosition $position): array
-    {
-        return match ($position) {
-            SignaturePosition::Finance => ['senior', 'finance'],
-            SignaturePosition::AccountingSpv => ['supervisor', 'accounting'],
-            SignaturePosition::Reviewer => ['manager', 'bod'],
-            SignaturePosition::Director => ['director', 'bod'],
-            SignaturePosition::Accounting => ['staff', 'accounting'],
-            SignaturePosition::User => throw new \LogicException('The requester does not have a division signer mapping.'),
-        };
+    private static function approvalStepFor(
+        SignaturePosition $position,
+        ?PurchaseRequest $record = null,
+        mixed $requestedById = null,
+        ?string $company = null,
+    ): ?array {
+        if ($record !== null) {
+            return $record->approvalStep($position);
+        }
+
+        $requestedBy = $requestedById
+            ? User::with('employee')->find($requestedById)
+            : Auth::user();
+        $company ??= $requestedBy?->company;
+        $division = $requestedBy?->division;
+
+        if (! $company || ! $division) {
+            return null;
+        }
+
+        return PurchaseRequestDocumentSetting::approvalStepFor($company, $division, $position);
     }
 
-    private static function userMatchesPosition(?User $user, SignaturePosition $position): bool
-    {
+    private static function userMatchesPosition(
+        ?User $user,
+        SignaturePosition $position,
+        ?PurchaseRequest $record = null,
+        mixed $requestedById = null,
+        ?string $company = null,
+    ): bool {
         if ($user === null) {
             return false;
         }
 
-        if ($user->position === $position->value) {
-            return true;
-        }
+        $step = self::approvalStepFor($position, $record, $requestedById, $company);
 
-        if ($position === SignaturePosition::User) {
-            return false;
-        }
-
-        [$employeePosition, $division] = self::employeeAttributesForPosition($position);
-
-        return $user->position === $employeePosition && $user->division === $division;
+        return $step !== null && PurchaseRequestDocumentSetting::stepMatchesUser($step, $user);
     }
 
     /**
      * Find the user associated with the given signature position.
      */
-    public static function findUserForPosition(SignaturePosition $position, mixed $requestedById = null): ?User
-    {
-        // 1. For User position, check requested_by user if provided
+    public static function findUserForPosition(
+        SignaturePosition $position,
+        mixed $requestedById = null,
+        ?PurchaseRequest $record = null,
+    ): ?User {
+        $requester = $record?->requestedBy
+            ?? ($requestedById && (int) $requestedById !== (int) Auth::id()
+                ? User::with('employee')->find($requestedById)
+                : Auth::user());
+        $company = $record?->approval_flow === 'lba'
+            ? 'lba'
+            : ($record?->company ?? $requester?->company);
+        $step = self::approvalStepFor($position, $record, $requestedById, $company);
+
         if ($position === SignaturePosition::User && filled($requestedById)) {
             $user = User::with('employee')->find($requestedById);
+
             if ($user && filled($user->signature_path)) {
                 return $user;
             }
         }
 
-        // 2. Check currently authenticated user if matching position and has signature
         $authUser = Auth::user();
-        if (self::userMatchesPosition($authUser, $position) && filled($authUser->signature_path)) {
+        if (self::userMatchesPosition($authUser, $position, $record, $requestedById, $company)
+            && filled($authUser->signature_path)) {
             return $authUser;
         }
 
-        $userWithSignature = null;
-
-        if ($position !== SignaturePosition::User) {
-            [$employeePosition, $division] = self::employeeAttributesForPosition($position);
-
-            $userWithSignature = User::query()
-                ->with('employee')
-                ->whereHas('employee', fn (Builder $query): Builder => $query
-                    ->where('position', $employeePosition)
-                    ->where('division', $division))
-                ->whereNotNull('signature_path')
-                ->orderBy('id')
-                ->first()
-                ?? User::query()
-                    ->with('employee')
-                    ->whereHas('employee', fn (Builder $query): Builder => $query->where('position', $position->value))
-                    ->whereNotNull('signature_path')
-                    ->orderBy('id')
-                    ->first();
-        }
-
-        if ($userWithSignature) {
-            return $userWithSignature;
-        }
-
-        // 4. Fallback for User position: requested_by user even without signature
         if ($position === SignaturePosition::User && filled($requestedById)) {
             return User::with('employee')->find($requestedById);
         }
 
-        // 5. Fallback: authenticated user if matching position
-        if (self::userMatchesPosition($authUser, $position)) {
+        if ($step === null || $step['approver_type'] === 'requester') {
+            return null;
+        }
+
+        $users = self::usersForApprovalStep($step);
+        $userWithSignature = (clone $users)
+            ->whereNotNull('signature_path')
+            ->orderBy('id')
+            ->first();
+
+        if ($userWithSignature !== null) {
+            return $userWithSignature;
+        }
+
+        if (self::userMatchesPosition($authUser, $position, $record, $requestedById, $company)) {
             return $authUser;
         }
 
-        if ($position !== SignaturePosition::User) {
-            [$employeePosition, $division] = self::employeeAttributesForPosition($position);
+        return $users->orderBy('id')->first();
+    }
 
-            return User::query()
-                ->with('employee')
-                ->whereHas('employee', fn (Builder $query): Builder => $query
-                    ->where('position', $employeePosition)
-                    ->where('division', $division))
-                ->orderBy('id')
-                ->first()
-                ?? User::query()
-                    ->with('employee')
-                    ->whereHas('employee', fn (Builder $query): Builder => $query->where('position', $position->value))
-                    ->orderBy('id')
-                    ->first();
+    /**
+     * @param  array<string, mixed>  $step
+     * @return Builder<User>
+     */
+    private static function usersForApprovalStep(array $step): Builder
+    {
+        $query = User::query()->with('employee');
+
+        if (($step['approver_type'] ?? null) === 'name') {
+            return $query->whereHas('employee', fn (Builder $employeeQuery): Builder => $employeeQuery
+                ->where('name', 'like', ($step['signer_name'] ?? '').'%'));
         }
 
-        return null;
+        if (($step['approver_type'] ?? null) === 'position') {
+            return $query->whereHas('employee', fn (Builder $employeeQuery): Builder => $employeeQuery
+                ->where('position', $step['position'] ?? null)
+                ->where('division', $step['division'] ?? null));
+        }
+
+        return $query->whereKey(null);
     }
 
     /**
@@ -643,6 +690,16 @@ class PurchaseRequestForm
      */
     public static function canSignPosition(SignaturePosition $position, Get $get, ?PurchaseRequest $record = null): bool
     {
+        $user = Auth::user();
+        $company = self::selectedCompany($record, $get);
+        $hasCompanyPermission = $position === SignaturePosition::User
+            ? $user?->canCreatePurchaseRequestsFor($company)
+            : $user?->canSignPurchaseRequestsFor($company);
+
+        if (! $hasCompanyPermission) {
+            return false;
+        }
+
         // 1. If already signed and persisted in the record, it cannot be changed.
         if (filled($record?->getAttribute($position->signatureField()))) {
             return false;
@@ -654,8 +711,17 @@ class PurchaseRequestForm
         }
 
         if ($record !== null && $record->exists) {
+            if (! in_array($position, $record->signingPositions(), true)) {
+                return false;
+            }
+
             if ($position === SignaturePosition::User) {
-                if ($record->status !== PurchaseRequestStatus::PendingFinance) {
+                $firstApprovalPosition = $record->signingPositions()[1] ?? null;
+                $firstApprovalStatus = $firstApprovalPosition === null
+                    ? null
+                    : PurchaseRequestStatus::forSignaturePosition($firstApprovalPosition);
+
+                if ($firstApprovalStatus === null || $record->status !== $firstApprovalStatus) {
                     return false;
                 }
             } elseif ($record->status?->expectedSignaturePosition() !== $position) {
@@ -670,26 +736,29 @@ class PurchaseRequestForm
                 return false;
             }
 
-            return Auth::user()?->position === SignaturePosition::User->value
-                || (Auth::user() !== null && (int) $get('requested_by') === (int) Auth::id())
-                || (bool) Auth::user()?->isStaff();
+            return $user !== null && (int) $get('requested_by') === (int) $user->id;
         }
 
         // 4. On existing record:
         // User signature cannot be signed/changed if already persisted.
         if ($position === SignaturePosition::User) {
             return blank($record->getAttribute($position->signatureField()))
-                && (Auth::user()?->position === SignaturePosition::User->value || (int) $record->requested_by === (int) Auth::id() || (bool) Auth::user()?->isStaff());
+                && $user !== null
+                && (int) $record->requested_by === (int) $user->id;
         }
 
         // 5. For approval positions (Finance, Accounting SPV, Reviewer, Director):
         // Current user must match this position or be staff/admin.
-        if (! self::userMatchesPosition(Auth::user(), $position) && ! (bool) Auth::user()?->isStaff()) {
+        if (! self::userMatchesPosition($user, $position, $record) && ! $user?->isStaff()) {
             return false;
         }
 
         // 6. The previous position in sequence must have already signed.
-        $previousPosition = $position->previous();
+        $positions = $record->signingPositions();
+        $positionIndex = array_search($position, $positions, true);
+        $previousPosition = $positionIndex === false || $positionIndex === 0
+            ? null
+            : $positions[$positionIndex - 1];
 
         return $previousPosition === null || filled($get($previousPosition->signatureField()) ?? $record->getAttribute($previousPosition->signatureField()));
     }
@@ -709,7 +778,13 @@ class PurchaseRequestForm
 
         if ($record === null || ! $record->exists) {
             if ($position !== SignaturePosition::User) {
-                return 'Waiting for the '.$position->previous()?->getLabel().' signature.';
+                $positions = self::signingPositionsFor($record, $get);
+                $positionIndex = array_search($position, $positions, true);
+                $previousPosition = $positionIndex === false || $positionIndex === 0
+                    ? null
+                    : $positions[$positionIndex - 1];
+
+                return 'Waiting for the '.$previousPosition?->getLabel().' signature.';
             }
 
             if (! self::canSignPosition($position, $get, $record)) {
@@ -719,11 +794,25 @@ class PurchaseRequestForm
             return 'Sign here.';
         }
 
-        if (! self::userMatchesPosition(Auth::user(), $position) && ! (Auth::user()?->isStaff() && $position === SignaturePosition::User)) {
+        $user = Auth::user();
+        $company = self::selectedCompany($record, $get);
+        $hasCompanyPermission = $position === SignaturePosition::User
+            ? $user?->canCreatePurchaseRequestsFor($company)
+            : $user?->canSignPurchaseRequestsFor($company);
+
+        if (! $hasCompanyPermission) {
+            return 'Akses perusahaan dibatasi.';
+        }
+
+        if (! self::userMatchesPosition($user, $position, $record) && ! ($user?->isStaff() && $position === SignaturePosition::User)) {
             return 'Akses dibatasi untuk '.$position->getLabel();
         }
 
-        $previousPosition = $position->previous();
+        $positions = $record->signingPositions();
+        $positionIndex = array_search($position, $positions, true);
+        $previousPosition = $positionIndex === false || $positionIndex === 0
+            ? null
+            : $positions[$positionIndex - 1];
 
         if ($previousPosition !== null && blank($get($previousPosition->signatureField()) ?? $record->getAttribute($previousPosition->signatureField()))) {
             return 'Waiting for the '.$previousPosition->getLabel().' signature.';
@@ -743,16 +832,90 @@ class PurchaseRequestForm
         ]));
     }
 
-    private static function currentDocumentSetting(): ?PurchaseRequestDocumentSetting
+    private static function currentDocumentSetting(?int $requestedById = null, ?string $company = null): ?PurchaseRequestDocumentSetting
     {
-        $division = Auth::user()?->division;
+        $requestedBy = $requestedById ? User::find($requestedById) : null;
+        $division = $requestedBy?->division ?? Auth::user()?->division;
+        $company ??= self::defaultPurchaseRequestCompany()
+            ?? $requestedBy?->company
+            ?? Auth::user()?->company;
 
-        if (! $division) {
+        if (! $division || ! $company) {
             return null;
         }
 
         return PurchaseRequestDocumentSetting::query()
+            ->where('company', $company)
             ->where('division', $division)
             ->first();
+    }
+
+    /**
+     * Get the signing sequence for the current form record or requester.
+     *
+     * @return array<int, SignaturePosition>
+     */
+    private static function signingPositionsFor(?PurchaseRequest $record, Get $get): array
+    {
+        $requestedById = $record?->requested_by ?? $get('requested_by');
+        $requester = $record?->requestedBy
+            ?? ($requestedById && (int) $requestedById !== (int) Auth::id()
+                ? User::with('employee')->find($requestedById)
+                : Auth::user());
+        $company = self::selectedCompany($record, $get);
+        $division = $record?->division ?? $requester?->division ?? '';
+
+        return PurchaseRequestDocumentSetting::signingPositionsFor($company, $division);
+    }
+
+    private static function previewPurchaseRequestNumber(?int $requestedById = null, ?string $company = null): ?string
+    {
+        return self::currentDocumentSetting($requestedById, $company)?->formatPurchaseRequestNumber();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function purchaseRequestCompanyOptions(): array
+    {
+        $user = Auth::user();
+
+        return collect([
+            'lbi' => 'LBI - PT Lautan Berkah Internasional',
+            'lba' => 'LBA - PT Lautan Berkah Amanah',
+        ])
+            ->filter(fn (string $label, string $company): bool => $user !== null
+                && $user->canCreatePurchaseRequestsFor($company)
+                && ($company !== 'lba' || PurchaseRequestDocumentSetting::signingPositionsFor('lba', (string) $user->division) !== []))
+            ->all();
+    }
+
+    private static function defaultPurchaseRequestCompany(): ?string
+    {
+        $companies = array_keys(self::purchaseRequestCompanyOptions());
+        $userCompany = Auth::user()?->company;
+
+        if (in_array($userCompany, $companies, true)) {
+            return $userCompany;
+        }
+
+        return $companies[0] ?? null;
+    }
+
+    private static function selectedCompany(?PurchaseRequest $record, Get $get): string
+    {
+        if (in_array($record?->company, ['lbi', 'lba'], true)) {
+            return $record->company;
+        }
+
+        $selectedCompany = $get('company');
+
+        if (in_array($selectedCompany, ['lbi', 'lba'], true)) {
+            return $selectedCompany;
+        }
+
+        return self::defaultPurchaseRequestCompany()
+            ?? Auth::user()?->company
+            ?? 'lbi';
     }
 }

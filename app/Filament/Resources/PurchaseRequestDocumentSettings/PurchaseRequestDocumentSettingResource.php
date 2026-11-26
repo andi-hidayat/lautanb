@@ -22,8 +22,6 @@ class PurchaseRequestDocumentSettingResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Purchasing';
-
     protected static ?int $navigationSort = 5;
 
     protected static ?string $navigationLabel = 'PR Document Setting';
@@ -35,6 +33,11 @@ class PurchaseRequestDocumentSettingResource extends Resource
     public static function canViewAny(): bool
     {
         return (bool) auth()->user()?->isStaff();
+    }
+
+    public static function getNavigationGroup(): string|UnitEnum|null
+    {
+        return auth()->user()?->company === 'lba' ? 'LBA' : 'LBI';
     }
 
     public static function canCreate(): bool

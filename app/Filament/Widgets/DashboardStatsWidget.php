@@ -13,6 +13,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 
 class DashboardStatsWidget extends StatsOverviewWidget
@@ -22,6 +23,8 @@ class DashboardStatsWidget extends StatsOverviewWidget
         $now = Carbon::now();
         $startOfMonth = $now->copy()->startOfMonth();
         $endOfMonth = $now->copy()->endOfMonth();
+        $user = auth()->user();
+        $company = $user?->isStaff() ? null : $user?->company;
 
         // Total saldo petty cash per bulan (saldo akhir di bulan ini)
         $pettyCashMonthlyBalance = (float) PettyCash::query()
@@ -31,15 +34,29 @@ class DashboardStatsWidget extends StatsOverviewWidget
             ->value('balance') ?? 0;
 
         // Total jumlah product comparison
-        $totalProductComparisons = ProductComparison::count();
+        $productComparisons = ProductComparison::query();
+        $purchasePlans = PurchasePlan::query();
+        $purchasePlanItems = PurchasePlanItem::query();
+        $purchaseRequests = PurchaseRequest::query();
+        $purchaseRequestItems = PurchaseRequestItem::query();
+
+        if ($company !== null) {
+            $productComparisons->where('company', $company);
+            $purchasePlans->where('company', $company);
+            $purchasePlanItems->whereHas('purchasePlan', fn (Builder $query): Builder => $query->where('company', $company));
+            $purchaseRequests->where('company', $company);
+            $purchaseRequestItems->whereHas('purchaseRequest', fn (Builder $query): Builder => $query->where('company', $company));
+        }
+
+        $totalProductComparisons = $productComparisons->count();
 
         // Total jumlah purchase plan dan nilai total rupiahnya
-        $totalPurchasePlans = PurchasePlan::count();
-        $totalPurchasePlanValue = (float) PurchasePlanItem::sum('total_cost');
+        $totalPurchasePlans = $purchasePlans->count();
+        $totalPurchasePlanValue = (float) $purchasePlanItems->sum('total_cost');
 
         // Total jumlah purchase request dan total nilai keseluruhan
-        $totalPurchaseRequests = PurchaseRequest::count();
-        $totalPurchaseRequestValue = (float) PurchaseRequestItem::sum('total_cost');
+        $totalPurchaseRequests = $purchaseRequests->count();
+        $totalPurchaseRequestValue = (float) $purchaseRequestItems->sum('total_cost');
 
         // Total ticket
         $totalTickets = Ticket::count();

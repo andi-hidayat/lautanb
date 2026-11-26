@@ -18,6 +18,7 @@ class PurchasePlanFactory extends Factory
     public function definition(): array
     {
         return [
+            'company' => 'lbi',
             'purchase_item_name' => fake()->words(3, true),
             'description' => fake()->sentence(),
             'purpose' => fake()->sentence(),

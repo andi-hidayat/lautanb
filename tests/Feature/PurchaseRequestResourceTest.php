@@ -20,6 +20,53 @@ class PurchaseRequestResourceTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_regular_users_only_see_purchase_requests_for_their_company(): void
+    {
+        $lbiRequester = User::factory()->create();
+        $lbaRequesterEmployee = Employee::factory()->create(['company' => 'lba']);
+        $lbaRequester = User::factory()->create([
+            'employee_id' => $lbaRequesterEmployee->id,
+            'can_create_pr_lba' => true,
+            'can_sign_pr_lba' => true,
+        ]);
+        $lbiRequest = PurchaseRequest::create([
+            'title' => 'LBI request',
+            'requested_by' => $lbiRequester->id,
+            'company' => 'lbi',
+        ]);
+        $lbaRequest = PurchaseRequest::create([
+            'title' => 'LBA request',
+            'requested_by' => $lbaRequester->id,
+            'company' => 'lba',
+        ]);
+        $this->actingAs($lbiRequester);
+
+        Livewire::test(ListPurchaseRequests::class)
+            ->assertCanSeeTableRecords([$lbiRequest])
+            ->assertCanNotSeeTableRecords([$lbaRequest]);
+    }
+
+    public function test_staff_users_can_see_purchase_requests_for_both_companies(): void
+    {
+        $adminEmployee = Employee::factory()->create([
+            'company' => 'lbi',
+            'role' => 'admin',
+        ]);
+        $admin = User::factory()->create(['employee_id' => $adminEmployee->id]);
+        $lbiRequest = PurchaseRequest::create([
+            'title' => 'LBI request',
+            'company' => 'lbi',
+        ]);
+        $lbaRequest = PurchaseRequest::create([
+            'title' => 'LBA request',
+            'company' => 'lba',
+        ]);
+        $this->actingAs($admin);
+
+        Livewire::test(ListPurchaseRequests::class)
+            ->assertCanSeeTableRecords([$lbiRequest, $lbaRequest]);
+    }
+
     public function test_a_fully_approved_and_signed_request_cannot_be_edited(): void
     {
         $requester = User::factory()->create();
@@ -71,7 +118,7 @@ class PurchaseRequestResourceTest extends TestCase
     {
         $requester = User::factory()->create();
         $approvalLevels = [
-            ['position' => 'senior', 'division' => 'finance', 'status' => PurchaseRequestStatus::PendingFinance],
+            ['position' => 'senior_staff', 'division' => 'finance', 'status' => PurchaseRequestStatus::PendingFinance],
             ['position' => 'staff', 'division' => 'accounting', 'status' => PurchaseRequestStatus::PendingAccounting],
             ['position' => 'supervisor', 'division' => 'accounting', 'status' => PurchaseRequestStatus::PendingAccountingSpv],
             ['position' => 'director', 'division' => 'bod', 'status' => PurchaseRequestStatus::PendingDirector],
@@ -110,7 +157,7 @@ class PurchaseRequestResourceTest extends TestCase
         Storage::disk('local')->put('signatures/finance.png', 'signature-image');
         $requester = User::factory()->create();
         $financeEmployee = Employee::factory()->create([
-            'position' => 'senior',
+            'position' => 'senior_staff',
             'division' => 'finance',
         ]);
         $financeUser = User::factory()->create([
@@ -146,7 +193,7 @@ class PurchaseRequestResourceTest extends TestCase
         Storage::disk('local')->put('signatures/finance.png', 'signature-image');
         $requester = User::factory()->create();
         $financeEmployee = Employee::factory()->create([
-            'position' => 'senior',
+            'position' => 'senior_staff',
             'division' => 'finance',
         ]);
         $financeUser = User::factory()->create([
@@ -175,7 +222,7 @@ class PurchaseRequestResourceTest extends TestCase
     {
         $requester = User::factory()->create();
         $financeEmployee = Employee::factory()->create([
-            'position' => 'senior',
+            'position' => 'senior_staff',
             'division' => 'finance',
         ]);
         $financeUser = User::factory()->create([
@@ -203,7 +250,7 @@ class PurchaseRequestResourceTest extends TestCase
     {
         $requester = User::factory()->create();
         $financeEmployee = Employee::factory()->create([
-            'position' => 'senior',
+            'position' => 'senior_staff',
             'division' => 'finance',
         ]);
         $financeUser = User::factory()->create([
@@ -234,7 +281,7 @@ class PurchaseRequestResourceTest extends TestCase
         $requester = User::factory()->create();
         $approvalLevels = [
             [
-                'position' => 'senior',
+                'position' => 'senior_staff',
                 'division' => 'finance',
                 'status' => PurchaseRequestStatus::PendingFinance,
                 'field' => 'finance_signature',
@@ -301,7 +348,7 @@ class PurchaseRequestResourceTest extends TestCase
     {
         $requester = User::factory()->create();
         $financeEmployee = Employee::factory()->create([
-            'position' => 'senior',
+            'position' => 'senior_staff',
             'division' => 'finance',
         ]);
         $financeUser = User::factory()->create([
@@ -347,7 +394,7 @@ class PurchaseRequestResourceTest extends TestCase
     {
         $signers = [
             ['name' => 'Pemohon Contoh', 'position' => 'staff', 'division' => 'sales'],
-            ['name' => 'Finance Penandatangan', 'position' => 'senior', 'division' => 'finance'],
+            ['name' => 'Finance Penandatangan', 'position' => 'senior_staff', 'division' => 'finance'],
             ['name' => 'Accounting Penandatangan', 'position' => 'staff', 'division' => 'accounting'],
             ['name' => 'SPV Penandatangan', 'position' => 'supervisor', 'division' => 'accounting'],
             ['name' => 'Direktur Penandatangan', 'position' => 'director', 'division' => 'bod'],

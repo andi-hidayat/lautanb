@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Users\Pages;
 
 use App\Filament\Resources\Users\UserResource;
 use App\Models\Employee;
+use App\Models\User;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Support\Facades\Storage;
@@ -25,6 +26,10 @@ class EditUser extends EditRecord
     {
         if (! auth()->user()?->isStaff()) {
             $data['employee_id'] = $this->getRecord()->employee_id;
+
+            foreach (User::PURCHASE_REQUEST_PERMISSION_FIELDS as $field) {
+                unset($data[$field]);
+            }
         }
 
         $employeeId = $data['employee_id'] ?? $this->getRecord()->employee_id;

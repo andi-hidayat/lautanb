@@ -16,6 +16,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
 class UserResource extends Resource
@@ -41,6 +42,18 @@ class UserResource extends Resource
     public static function table(Table $table): Table
     {
         return UsersTable::configure($table);
+    }
+
+    public static function canCreate(): bool
+    {
+        return (bool) auth()->user()?->isStaff();
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        $user = auth()->user();
+
+        return $user !== null && ($user->isStaff() || $record->is($user));
     }
 
     /**

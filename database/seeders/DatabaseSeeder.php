@@ -17,18 +17,23 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $employees = [
-            ['name' => 'Superadmin', 'email' => 'superadmin@gmail.com', 'role' => 'superadmin'],
-            ['name' => 'Admin', 'email' => 'admin@gmail.com', 'role' => 'admin'],
-            ['name' => 'User', 'email' => 'user@gmail.com', 'role' => 'user'],
+            ['name' => 'Superadmin', 'email' => 'superadmin@gmail.com', 'company' => 'lbi', 'role' => 'superadmin', 'division' => 'it'],
+            ['name' => 'Admin', 'email' => 'admin@gmail.com', 'company' => 'lbi', 'role' => 'admin', 'division' => 'it'],
+            ['name' => 'User', 'email' => 'user@gmail.com', 'company' => 'lbi', 'role' => 'user', 'division' => 'it'],
         ];
 
         foreach ($employees as $data) {
             $employee = Employee::create($data);
+            $isStaff = in_array($data['role'], ['admin', 'superadmin'], true);
 
             User::create([
                 'employee_id' => $employee->id,
                 'email' => $employee->email,
                 'password' => 'password',
+                'can_create_pr_lbi' => true,
+                'can_create_pr_lba' => $isStaff,
+                'can_sign_pr_lbi' => true,
+                'can_sign_pr_lba' => $isStaff,
             ]);
         }
 

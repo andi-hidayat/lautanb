@@ -99,7 +99,7 @@ class ViewPurchaseRequest extends ViewRecord
 
         $this->refreshFormData(array_map(
             static fn (SignaturePosition $signaturePosition): string => $signaturePosition->signatureField(),
-            SignaturePosition::signingCases(),
+            $record->signingPositions(),
         ));
     }
 

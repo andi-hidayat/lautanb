@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-#[Fillable(['name', 'email', 'role', 'position', 'division'])]
+#[Fillable(['name', 'email', 'company', 'role', 'position', 'division'])]
 class Employee extends Model
 {
     /** @use HasFactory<EmployeeFactory> */

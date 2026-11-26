@@ -18,6 +18,10 @@ return new class extends Migration
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
             $table->string('signature_path')->nullable();
+            $table->boolean('can_create_pr_lbi')->default(false);
+            $table->boolean('can_create_pr_lba')->default(false);
+            $table->boolean('can_sign_pr_lbi')->default(false);
+            $table->boolean('can_sign_pr_lba')->default(false);
             $table->rememberToken();
             $table->timestamps();
         });

@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'description',
     'purpose',
     'year',
+    'company',
 ])]
 class PurchasePlan extends Model
 {

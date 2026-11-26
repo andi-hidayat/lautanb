@@ -21,6 +21,7 @@ class EmployeeFactory extends Factory
         return [
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
+            'company' => 'lbi',
             'role' => 'user',
             'position' => null,
             'division' => null,

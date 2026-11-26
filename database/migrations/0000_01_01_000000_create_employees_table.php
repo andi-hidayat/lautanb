@@ -18,21 +18,24 @@ return new class extends Migration
             $table->enum('company', ['lba', 'lbi']);
             $table->enum('role', ['admin', 'superadmin', 'user'])->default('user');
             $table->enum('position', [
-                'director',
-                'staff',
-                'senior',
                 'Non-Staff',
+                'staff',
+                'senior_staff',
                 'supervisor',
+                'assistant_manager',
                 'manager',
                 'senior_manager',
                 'general_manager',
+                'vice_president',
+                'director',
+                'president_director',
+                'commissioner',
             ])->nullable();
             $table->enum('division', [
                 'finance',
                 'accounting',
                 'hr',
                 'ga',
-                'hrga',
                 'it',
                 'legal',
                 'marketing',
@@ -41,6 +44,8 @@ return new class extends Migration
                 'logistic',
                 'hse',
                 'operational',
+                'crewing',
+                'procurement',
                 'technical',
                 'auditor',
                 'bod',

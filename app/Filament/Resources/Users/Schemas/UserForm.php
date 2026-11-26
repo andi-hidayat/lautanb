@@ -7,6 +7,8 @@ use App\Models\User;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 
@@ -37,7 +39,15 @@ class UserForm
                     ->disabled(fn (?User $record): bool => ! auth()->user()?->isStaff())
                     ->dehydrated()
                     ->afterStateUpdated(function (Set $set, ?string $state): void {
-                        $set('email', Employee::find($state)?->email);
+                        $employee = Employee::find($state);
+                        $set('email', $employee?->email);
+
+                        foreach (['lbi', 'lba'] as $company) {
+                            $isStaff = in_array($employee?->role, ['admin', 'superadmin'], true);
+                            $hasCompanyAccess = $employee?->company === $company;
+                            $set('can_create_pr_'.$company, $isStaff || $hasCompanyAccess);
+                            $set('can_sign_pr_'.$company, $isStaff || $hasCompanyAccess);
+                        }
                     }),
                 TextInput::make('email')
                     ->label('Email address')
@@ -60,6 +70,24 @@ class UserForm
                     ->preventFilePathTampering(
                         allowFilePathUsing: fn (string $file): bool => str_starts_with($file, 'signatures/'),
                     ),
+                Section::make('Akses Purchase Request')
+                    ->description('Tentukan perusahaan tempat user dapat membuat atau menandatangani PR.')
+                    ->visible(fn (): bool => (bool) auth()->user()?->isStaff())
+                    ->columns(2)
+                    ->schema([
+                        Toggle::make('can_create_pr_lbi')
+                            ->label('Buat PR di LBI')
+                            ->dehydrated(fn (): bool => (bool) auth()->user()?->isStaff()),
+                        Toggle::make('can_sign_pr_lbi')
+                            ->label('Tanda tangani PR di LBI')
+                            ->dehydrated(fn (): bool => (bool) auth()->user()?->isStaff()),
+                        Toggle::make('can_create_pr_lba')
+                            ->label('Buat PR di LBA')
+                            ->dehydrated(fn (): bool => (bool) auth()->user()?->isStaff()),
+                        Toggle::make('can_sign_pr_lba')
+                            ->label('Tanda tangani PR di LBA')
+                            ->dehydrated(fn (): bool => (bool) auth()->user()?->isStaff()),
+                    ]),
             ]);
     }
 }

@@ -11,7 +11,7 @@ class EmployeeForm
     public static function configure(Schema $schema): Schema
     {
         return $schema
-            ->components([ 
+            ->components([
                 TextInput::make('name')
                     ->required(),
                 TextInput::make('email')
@@ -23,7 +23,9 @@ class EmployeeForm
                     ->options([
                         'lba' => 'PT Lautan Berkah Amanah',
                         'lbi' => 'PT Lautan Berkah Internasional',
-                    ]),
+                    ])
+                    ->default('lbi')
+                    ->required(),
                 Select::make('role')
                     ->options([
                         'user' => 'User',
@@ -35,14 +37,18 @@ class EmployeeForm
                 Select::make('position')
                     ->label('Position')
                     ->options([
-                        'director' => 'Director',
-                        'staff' => 'Staff',
-                        'senior' => 'Senior',
                         'Non-Staff' => 'Non-Staff',
+                        'staff' => 'Staff',
+                        'senior_staff' => 'Senior Staff',
                         'supervisor' => 'Supervisor',
+                        'assistant_manager' => 'Assistant Manager',
                         'manager' => 'Manager',
                         'senior_manager' => 'Senior Manager',
                         'general_manager' => 'General Manager',
+                        'vice_president' => 'Vice President',
+                        'director' => 'Director',
+                        'president_director' => 'President Director',
+                        'commissioner' => 'Commissioner',
                     ])
                     ->default(null),
                 Select::make('division')
@@ -60,6 +66,9 @@ class EmployeeForm
                         'logistic' => 'Logistic',
                         'hse' => 'HSE',
                         'operational' => 'Operational',
+                        'crewing' => 'Crewing',
+                        'ops_crw' => 'Operations and Crewing',
+                        'procurement' => 'Procurement',
                         'auditor' => 'Auditor',
                         'technical' => 'Technical',
                         'bod' => 'BOD',

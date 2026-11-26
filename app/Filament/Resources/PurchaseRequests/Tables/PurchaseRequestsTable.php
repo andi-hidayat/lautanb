@@ -15,6 +15,9 @@ class PurchaseRequestsTable
     {
         return $table
             ->columns([
+                TextColumn::make('company')
+                    ->badge()
+                    ->visible(fn (): bool => (bool) auth()->user()?->isStaff()),
                 TextColumn::make('purchase_request_number')
                     ->label('Number')
                     ->searchable(),

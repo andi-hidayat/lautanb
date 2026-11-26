@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('year');
             $table->text('description')->nullable();
             $table->text('purpose')->nullable();
+            $table->string('company')->default('lbi')->index();
             $table->timestamps();
         });
 

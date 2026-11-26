@@ -4,6 +4,7 @@ namespace App\Filament\Resources\ProductComparisons\Schemas;
 
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Get;
@@ -17,6 +18,15 @@ class ProductComparisonForm
     {
         return $schema
             ->components([
+                Select::make('company')
+                    ->label('Company')
+                    ->options([
+                        'lbi' => 'LBI',
+                        'lba' => 'LBA',
+                    ])
+                    ->default(fn (): ?string => auth()->user()?->company ?? 'lbi')
+                    ->visible(fn (): bool => (bool) auth()->user()?->isStaff())
+                    ->required(),
                 TextInput::make('title')
                     ->label('Comparison Title')
                     ->required()

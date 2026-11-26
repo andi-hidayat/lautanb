@@ -12,6 +12,7 @@ use Illuminate\Support\Str;
     'title',
     'description',
     'products',
+    'company',
 ])]
 class ProductComparison extends Model
 {

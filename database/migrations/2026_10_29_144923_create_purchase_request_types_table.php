@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('purchase_request_types', function (Blueprint $table) {
             $table->id();
+            $table->string('company')->default('lbi')->index();
             $table->string('division');
             $table->string('name');
             $table->integer('sort_order')->default(0);

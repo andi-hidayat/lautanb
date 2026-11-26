@@ -18,6 +18,7 @@ class ProductComparisonFactory extends Factory
     public function definition(): array
     {
         return [
+            'company' => 'lbi',
             'title' => fake()->words(3, true),
             'description' => fake()->sentence(),
             'products' => [

@@ -15,10 +15,26 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Storage;
 
-#[Fillable(['employee_id', 'email', 'password', 'signature_path'])]
+#[Fillable([
+    'employee_id',
+    'email',
+    'password',
+    'signature_path',
+    'can_create_pr_lbi',
+    'can_create_pr_lba',
+    'can_sign_pr_lbi',
+    'can_sign_pr_lba',
+])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
+    public const array PURCHASE_REQUEST_PERMISSION_FIELDS = [
+        'can_create_pr_lbi',
+        'can_create_pr_lba',
+        'can_sign_pr_lbi',
+        'can_sign_pr_lba',
+    ];
+
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
@@ -44,6 +60,10 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'can_create_pr_lbi' => 'boolean',
+            'can_create_pr_lba' => 'boolean',
+            'can_sign_pr_lbi' => 'boolean',
+            'can_sign_pr_lba' => 'boolean',
         ];
     }
 
@@ -112,6 +132,33 @@ class User extends Authenticatable
     }
 
     /**
+     * Determine whether the user can create purchase requests for a company.
+     */
+    public function canCreatePurchaseRequestsFor(string $company): bool
+    {
+        return in_array($company, ['lbi', 'lba'], true)
+            && (bool) $this->getAttribute('can_create_pr_'.$company);
+    }
+
+    /**
+     * Determine whether the user can sign purchase requests for a company.
+     */
+    public function canSignPurchaseRequestsFor(string $company): bool
+    {
+        return in_array($company, ['lbi', 'lba'], true)
+            && (bool) $this->getAttribute('can_sign_pr_'.$company);
+    }
+
+    /**
+     * Determine whether the user can access purchase requests for a company.
+     */
+    public function canAccessPurchaseRequestsFor(string $company): bool
+    {
+        return $this->canCreatePurchaseRequestsFor($company)
+            || $this->canSignPurchaseRequestsFor($company);
+    }
+
+    /**
      * Determine whether the user is a superadmin.
      */
     public function isSuperadmin(): bool
@@ -171,6 +218,16 @@ class User extends Authenticatable
     protected function division(): Attribute
     {
         return Attribute::get(fn (): ?string => $this->employee?->division);
+    }
+
+    /**
+     * Get the company that owns the employee account.
+     *
+     * @return Attribute<string|null, never>
+     */
+    protected function company(): Attribute
+    {
+        return Attribute::get(fn (): ?string => $this->employee?->company);
     }
 
     /**

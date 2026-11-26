@@ -90,6 +90,63 @@ class UserSignatureTest extends TestCase
         Storage::disk('local')->assertMissing('signatures/signature.png');
     }
 
+    public function test_an_administrator_can_update_purchase_request_company_permissions(): void
+    {
+        $administrator = User::factory()->admin()->create();
+        $user = User::factory()->create([
+            'can_create_pr_lba' => false,
+            'can_sign_pr_lba' => false,
+        ]);
+
+        $this->actingAs($administrator);
+
+        Livewire::test(EditUser::class, ['record' => $user->getRouteKey()])
+            ->fillForm([
+                'can_create_pr_lbi' => true,
+                'can_sign_pr_lbi' => false,
+                'can_create_pr_lba' => true,
+                'can_sign_pr_lba' => true,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'can_create_pr_lbi' => true,
+            'can_sign_pr_lbi' => false,
+            'can_create_pr_lba' => true,
+            'can_sign_pr_lba' => true,
+        ]);
+    }
+
+    public function test_a_user_cannot_change_their_own_purchase_request_permissions(): void
+    {
+        $user = User::factory()->create([
+            'can_create_pr_lbi' => true,
+            'can_sign_pr_lbi' => true,
+            'can_create_pr_lba' => false,
+            'can_sign_pr_lba' => false,
+        ]);
+
+        $this->actingAs($user);
+
+        Livewire::test(EditUser::class, ['record' => $user->getRouteKey()])
+            ->set('data.can_create_pr_lbi', false)
+            ->set('data.can_sign_pr_lbi', false)
+            ->set('data.can_create_pr_lba', true)
+            ->set('data.can_sign_pr_lba', true)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'can_create_pr_lbi' => true,
+            'can_sign_pr_lbi' => true,
+            'can_create_pr_lba' => false,
+            'can_sign_pr_lba' => false,
+        ]);
+    }
+
     public function test_a_user_can_access_their_own_edit_page(): void
     {
         $user = User::factory()->create();

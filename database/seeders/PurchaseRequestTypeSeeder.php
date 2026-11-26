@@ -70,6 +70,8 @@ class PurchaseRequestTypeSeeder extends Seeder
             'logistic' => $default,
             'hse' => $default,
             'operational' => $default,
+            'crewing' => $default,
+            'procurement' => $default,
             'technical' => $default,
             'auditor' => $default,
             'bod' => $default,
@@ -77,13 +79,16 @@ class PurchaseRequestTypeSeeder extends Seeder
 
         PurchaseRequestType::truncate();
 
-        foreach ($typesByDivision as $division => $types) {
-            foreach ($types as $type) {
-                PurchaseRequestType::create([
-                    'division' => $division,
-                    'name' => $type['name'],
-                    'sort_order' => $type['sort_order'],
-                ]);
+        foreach (['lbi', 'lba'] as $company) {
+            foreach ($typesByDivision as $division => $types) {
+                foreach ($types as $type) {
+                    PurchaseRequestType::create([
+                        'company' => $company,
+                        'division' => $division,
+                        'name' => $type['name'],
+                        'sort_order' => $type['sort_order'],
+                    ]);
+                }
             }
         }
     }

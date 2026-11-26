@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use UnitEnum;
 
 class PurchasePlanResource extends Resource
@@ -23,9 +24,29 @@ class PurchasePlanResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCurrencyDollar;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Purchasing';
-
     protected static ?int $navigationSort = 2;
+
+    public static function getNavigationGroup(): string|UnitEnum|null
+    {
+        return auth()->user()?->company === 'lba' ? 'LBA' : 'LBI';
+    }
+
+    /**
+     * Restrict regular users to their company's purchase plans.
+     *
+     * @return Builder<PurchasePlan>
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        $user = auth()->user();
+
+        if ($user?->isStaff()) {
+            return $query;
+        }
+
+        return $query->where('company', $user?->company ?? 'lbi');
+    }
 
     public static function form(Schema $schema): Schema
     {

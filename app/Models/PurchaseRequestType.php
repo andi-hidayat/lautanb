@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['division', 'name', 'sort_order'])]
+#[Fillable(['division', 'name', 'sort_order', 'company'])]
 class PurchaseRequestType extends Model
 {
     /**
@@ -14,14 +14,18 @@ class PurchaseRequestType extends Model
      *
      * @return array<string, string>
      */
-    public static function optionsForDivision(string $division): array
+    public static function optionsForDivision(string $division, ?string $company = null): array
     {
-        return self::query()
+        $query = self::query()
             ->where('division', $division)
             ->orderBy('sort_order')
-            ->orderBy('name')
-            ->pluck('name', 'name')
-            ->toArray();
+            ->orderBy('name');
+
+        if ($company !== null) {
+            $query->where('company', $company);
+        }
+
+        return $query->pluck('name', 'name')->toArray();
     }
 
     /**

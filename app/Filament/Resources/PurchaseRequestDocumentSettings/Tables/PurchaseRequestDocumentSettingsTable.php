@@ -13,6 +13,8 @@ class PurchaseRequestDocumentSettingsTable
     {
         return $table
             ->columns([
+                TextColumn::make('company')
+                    ->badge(),
                 TextColumn::make('division')
                     ->formatStateUsing(fn (string $state): string => PurchaseRequestDocumentSetting::DIVISIONS[$state] ?? $state)
                     ->sortable(),

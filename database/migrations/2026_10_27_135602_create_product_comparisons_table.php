@@ -16,6 +16,7 @@ return new class extends Migration
             $table->string('title')->nullable();
             $table->text('description')->nullable();
             $table->json('products')->nullable();
+            $table->string('company')->default('lbi')->index();
             $table->timestamps();
         });
     }

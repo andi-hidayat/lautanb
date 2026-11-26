@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Actions\PurchaseRequests\IssuePurchaseRequestDocument;
 use App\Filament\Resources\PurchaseRequests\Pages\CreatePurchaseRequest;
 use App\Models\Employee;
 use App\Models\PurchaseRequestDocumentSetting;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -32,7 +34,10 @@ class CreatePurchaseRequestTest extends TestCase
             ->assertSee('page')
             ->assertSee('Purchase Title')
             ->assertSee('Add Item')
-            ->assertSee('Total Required Cost');
+            ->assertSee('Total Required Cost')
+            ->assertFormSet([
+                'purchase_request_number' => 'PR/IT/'.today()->year.'/0001',
+            ]);
     }
 
     public function test_a_purchase_request_can_be_created_with_items(): void
@@ -87,6 +92,134 @@ class CreatePurchaseRequestTest extends TestCase
             'quantity' => 2,
             'total_cost' => 50000000,
         ]);
+    }
+
+    public function test_a_user_with_lba_access_can_create_a_request_for_lba(): void
+    {
+        $user = $this->userInDivision('operational');
+        $user->update([
+            'can_create_pr_lba' => true,
+            'can_sign_pr_lba' => false,
+        ]);
+        $this->configureDivisionDocuments('operational');
+        PurchaseRequestDocumentSetting::create([
+            'company' => 'lba',
+            'division' => 'operational',
+            'document_number' => 'FRM-LBA',
+            'revision_number' => '01',
+            'effective_date' => '2026-01-01',
+            'number_prefix' => 'PR/LBA',
+        ]);
+        $this->actingAs($user);
+
+        Livewire::test(CreatePurchaseRequest::class)
+            ->fillForm([
+                'company' => 'lba',
+                'title' => 'Permintaan Operasional LBA',
+                'needed_at' => '2026-11-01',
+                'requested_by' => $user->id,
+                'description' => 'Kebutuhan operasional.',
+                'pay_to' => 'PT Contoh',
+                'bank_merchant_name' => 'BCA',
+                'account_number' => '123456789',
+                'items' => [
+                    [
+                        'item_required_name' => 'Peralatan operasional',
+                        'unit_price' => 100000,
+                        'quantity' => 1,
+                        'total_cost' => 100000,
+                    ],
+                ],
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $this->assertDatabaseHas('purchase_requests', [
+            'title' => 'Permintaan Operasional LBA',
+            'requested_by' => $user->id,
+            'company' => 'lba',
+            'approval_flow' => 'lba',
+            'document_number' => 'FRM-LBA',
+            'purchase_request_number' => 'PR/LBA/'.today()->year.'/0001',
+        ]);
+    }
+
+    public function test_a_user_with_only_lba_create_access_defaults_to_lba(): void
+    {
+        $user = $this->userInDivision('operational');
+        $user->update([
+            'can_create_pr_lbi' => false,
+            'can_create_pr_lba' => true,
+        ]);
+        $this->assertTrue($user->fresh()->canCreatePurchaseRequestsFor('lba'));
+        PurchaseRequestDocumentSetting::create([
+            'company' => 'lba',
+            'division' => 'operational',
+            'document_number' => 'FRM-LBA',
+            'revision_number' => '01',
+            'effective_date' => '2026-01-01',
+            'number_prefix' => 'PR/LBA',
+        ]);
+        $this->actingAs($user);
+
+        Livewire::test(CreatePurchaseRequest::class)
+            ->assertOk()
+            ->assertFormFieldExists('title')
+            ->fillForm([
+                'title' => 'Permintaan Operasional LBA',
+                'needed_at' => '2026-11-01',
+                'requested_by' => $user->id,
+                'pay_to' => 'PT Contoh',
+                'bank_merchant_name' => 'BCA',
+                'account_number' => '123456789',
+                'items' => [
+                    [
+                        'item_required_name' => 'Peralatan operasional',
+                        'unit_price' => 100000,
+                        'quantity' => 1,
+                        'total_cost' => 100000,
+                    ],
+                ],
+            ])
+            ->call('create');
+
+        $this->assertDatabaseHas('purchase_requests', [
+            'title' => 'Permintaan Operasional LBA',
+            'requested_by' => $user->id,
+            'company' => 'lba',
+            'approval_flow' => 'lba',
+            'document_number' => 'FRM-LBA',
+            'purchase_request_number' => 'PR/LBA/'.today()->year.'/0001',
+        ]);
+    }
+
+    public function test_a_user_with_an_unmapped_lba_division_defaults_to_the_lbi_approval_flow(): void
+    {
+        $user = User::factory()->create([
+            'employee_id' => Employee::factory()->create([
+                'company' => 'lba',
+                'division' => 'it',
+            ])->id,
+            'can_create_pr_lbi' => true,
+            'can_create_pr_lba' => true,
+        ]);
+        $this->configureDivisionDocuments('it');
+        $this->actingAs($user);
+
+        Livewire::test(CreatePurchaseRequest::class)
+            ->assertOk()
+            ->assertFormSet(['company' => 'lbi'])
+            ->assertSeeInOrder(['Finance', 'Accounting', 'Accounting SPV', 'Director'])
+            ->assertDontSee('Finance LBA');
+    }
+
+    public function test_a_user_cannot_create_a_request_for_a_company_without_create_access(): void
+    {
+        $user = $this->userInDivision('operational');
+
+        $this->expectException(AuthorizationException::class);
+
+        app(IssuePurchaseRequestDocument::class)->forCreator($user, 'lba');
     }
 
     private function userInDivision(string $division): User

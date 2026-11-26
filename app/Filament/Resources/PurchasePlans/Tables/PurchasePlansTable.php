@@ -19,6 +19,9 @@ class PurchasePlansTable
         return $table
             ->modifyQueryUsing(fn (Builder $query): Builder => $query->withSum('items', 'total_cost'))
             ->columns([
+                TextColumn::make('company')
+                    ->badge()
+                    ->visible(fn (): bool => (bool) auth()->user()?->isStaff()),
                 TextColumn::make('purchase_item_name')
                     ->label('Purchase Plan Name')
                     ->searchable()

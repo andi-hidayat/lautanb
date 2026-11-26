@@ -26,7 +26,7 @@ class EditPurchaseRequest extends EditRecord
         $record = $this->getRecord();
         $user = Auth::user();
 
-        foreach (SignaturePosition::signingCases() as $position) {
+        foreach ($record->signingPositions() as $position) {
             $field = $position->signatureField();
 
             if (! array_key_exists($field, $data)) {
@@ -45,7 +45,11 @@ class EditPurchaseRequest extends EditRecord
             }
 
             if ($position === SignaturePosition::User) {
-                if (! $user instanceof User || (! $record->userMatchesPosition($user, $position) && ! $user->isStaff())) {
+                if (
+                    ! $user instanceof User
+                    || ! $user->canCreatePurchaseRequestsFor((string) $record->company)
+                    || ! $record->userMatchesPosition($user, $position)
+                ) {
                     throw new AuthorizationException('Hanya pemohon yang dapat menambahkan tanda tangan pemohon.');
                 }
 
@@ -61,6 +65,9 @@ class EditPurchaseRequest extends EditRecord
 
         foreach ([
             'requested_by',
+            'company',
+            'approval_flow',
+            'approval_steps',
             'division',
             'document_number',
             'revision_number',
@@ -99,10 +106,12 @@ class EditPurchaseRequest extends EditRecord
             }
 
             $record->resubmit($user);
+            $firstApprovalPosition = $record->signingPositions()[1] ?? null;
+            $firstApprovalLabel = $firstApprovalPosition?->getLabel() ?? 'tahap pertama';
 
             Notification::make()
                 ->title('Permintaan Diperbarui & Diajukan Ulang')
-                ->body('Perubahan Anda telah disimpan dan permintaan otomatis diajukan ulang ke Senior Finance.')
+                ->body('Perubahan Anda telah disimpan dan permintaan otomatis diajukan ulang ke '.$firstApprovalLabel.'.')
                 ->success()
                 ->send();
 

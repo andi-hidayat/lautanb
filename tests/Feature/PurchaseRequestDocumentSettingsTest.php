@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\PurchaseRequestStatus;
 use App\Filament\Resources\PurchaseRequestDocumentSettings\Pages\CreatePurchaseRequestDocumentSetting;
 use App\Filament\Resources\PurchaseRequestDocumentSettings\Pages\ListPurchaseRequestDocumentSettings;
 use App\Filament\Resources\PurchaseRequestDocumentSettings\PurchaseRequestDocumentSettingResource;
@@ -83,6 +84,67 @@ class PurchaseRequestDocumentSettingsTest extends TestCase
         ]);
     }
 
+    public function test_lba_finance_requests_use_the_lba_document_sequence_and_approval_flow(): void
+    {
+        $this->travelTo('2026-06-15 10:00:00');
+        $user = $this->userInDivision('finance', 'lba');
+        $this->configureDivisionDocuments('finance', 'lba');
+        $this->actingAs($user);
+
+        $this->createPurchaseRequest($user, 'LBA Finance request');
+
+        $this->assertDatabaseHas('purchase_requests', [
+            'title' => 'LBA Finance request',
+            'company' => 'lba',
+            'approval_flow' => 'lba',
+            'division' => 'finance',
+            'status' => PurchaseRequestStatus::PendingFinanceSeniorLba->value,
+            'purchase_request_number' => 'PR/LBA/FINANCE/2026/0001',
+        ]);
+    }
+
+    public function test_purchase_requests_keep_the_approval_workflow_snapshot_from_their_settings(): void
+    {
+        $user = $this->userInDivision('finance', 'lba');
+        $setting = $this->configureDivisionDocuments('finance', 'lba');
+        $approvalSteps = [
+            [
+                'stage' => 'user',
+                'approver_type' => 'requester',
+                'position' => null,
+                'division' => null,
+                'signer_name' => null,
+            ],
+            [
+                'stage' => 'reviewer',
+                'approver_type' => 'name',
+                'position' => null,
+                'division' => null,
+                'signer_name' => 'Custom Reviewer',
+            ],
+            [
+                'stage' => 'finance_senior_lba',
+                'approver_type' => 'name',
+                'position' => null,
+                'division' => null,
+                'signer_name' => 'Selvi Rahmawati',
+            ],
+        ];
+        $setting->update(['approval_steps' => $approvalSteps]);
+        $this->actingAs($user);
+
+        $request = $this->createPurchaseRequest($user, 'Customized workflow');
+
+        $this->assertSame(PurchaseRequestStatus::PendingReviewer, $request->status);
+        $this->assertSame($approvalSteps, $request->approvalSteps());
+
+        $setting->update([
+            'approval_steps' => PurchaseRequestDocumentSetting::defaultApprovalStepsFor('lba', 'finance'),
+        ]);
+
+        $this->assertSame($approvalSteps, $request->fresh()->approvalSteps());
+    }
+
     public function test_purchase_request_creation_fails_when_the_division_has_no_document_settings(): void
     {
         $user = $this->userInDivision('it');
@@ -155,6 +217,22 @@ class PurchaseRequestDocumentSettingsTest extends TestCase
         $this->actingAs(User::factory()->create([
             'employee_id' => $adminEmployee->id,
         ]));
+        $approvalSteps = [
+            [
+                'stage' => 'user',
+                'approver_type' => 'requester',
+                'position' => null,
+                'division' => null,
+                'signer_name' => null,
+            ],
+            [
+                'stage' => 'reviewer',
+                'approver_type' => 'name',
+                'position' => null,
+                'division' => null,
+                'signer_name' => 'Custom Reviewer',
+            ],
+        ];
 
         Livewire::test(CreatePurchaseRequestDocumentSetting::class)
             ->fillForm([
@@ -163,10 +241,17 @@ class PurchaseRequestDocumentSettingsTest extends TestCase
                 'revision_number' => '01',
                 'effective_date' => '2026-01-01',
                 'number_prefix' => 'PR/IT',
+                'approval_steps' => $approvalSteps,
             ])
             ->call('create')
             ->assertHasNoFormErrors();
 
+        $setting = PurchaseRequestDocumentSetting::query()
+            ->where('company', 'lbi')
+            ->where('division', 'it')
+            ->firstOrFail();
+
+        $this->assertSame($approvalSteps, $setting->approvalSteps());
         $this->assertDatabaseHas('purchase_request_document_settings', [
             'division' => 'it',
             'document_number' => 'FRM-IT',
@@ -190,26 +275,72 @@ class PurchaseRequestDocumentSettingsTest extends TestCase
         $this->assertDatabaseCount('purchase_request_document_settings', 1);
     }
 
-    private function userInDivision(string $division): User
+    public function test_admin_cannot_save_a_workflow_that_does_not_start_with_the_requester(): void
+    {
+        $adminEmployee = Employee::factory()->create([
+            'company' => 'lbi',
+            'role' => 'admin',
+            'division' => 'it',
+        ]);
+        $this->actingAs(User::factory()->create([
+            'employee_id' => $adminEmployee->id,
+        ]));
+
+        Livewire::test(CreatePurchaseRequestDocumentSetting::class)
+            ->fillForm([
+                'division' => 'it',
+                'document_number' => 'FRM-IT',
+                'revision_number' => '01',
+                'effective_date' => '2026-01-01',
+                'number_prefix' => 'PR/IT',
+                'approval_steps' => [
+                    [
+                        'stage' => 'reviewer',
+                        'approver_type' => 'name',
+                        'position' => null,
+                        'division' => null,
+                        'signer_name' => 'Custom Reviewer',
+                    ],
+                    [
+                        'stage' => 'finance',
+                        'approver_type' => 'name',
+                        'position' => null,
+                        'division' => null,
+                        'signer_name' => 'Custom Finance',
+                    ],
+                ],
+            ])
+            ->call('create')
+            ->assertHasFormErrors([
+                'approval_steps' => 'Pengaturan alur persetujuan belum valid. Hubungi admin.',
+            ]);
+
+        $this->assertDatabaseCount('purchase_request_document_settings', 0);
+    }
+
+    private function userInDivision(string $division, string $company = 'lbi'): User
     {
         $employee = Employee::factory()->create([
-            'company' => 'lbi',
+            'company' => $company,
             'division' => $division,
         ]);
 
         return User::factory()->create([
             'employee_id' => $employee->id,
+            'can_create_pr_'.$company => true,
+            'can_sign_pr_'.$company => true,
         ]);
     }
 
-    private function configureDivisionDocuments(string $division): PurchaseRequestDocumentSetting
+    private function configureDivisionDocuments(string $division, string $company = 'lbi'): PurchaseRequestDocumentSetting
     {
         return PurchaseRequestDocumentSetting::create([
+            'company' => $company,
             'division' => $division,
             'document_number' => 'FRM-'.strtoupper($division),
             'revision_number' => '02',
             'effective_date' => '2026-01-01',
-            'number_prefix' => 'PR/'.strtoupper($division),
+            'number_prefix' => ($company === 'lba' ? 'PR/LBA/' : 'PR/').strtoupper($division),
         ]);
     }
 

@@ -17,6 +17,9 @@ class ProductComparisonsTable
     {
         return $table
             ->columns([
+                TextColumn::make('company')
+                    ->badge()
+                    ->visible(fn (): bool => (bool) auth()->user()?->isStaff()),
                 TextColumn::make('title')
                     ->label('Comparison')
                     ->searchable()

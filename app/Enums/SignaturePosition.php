@@ -6,7 +6,7 @@ use Filament\Support\Contracts\HasColor;
 use Filament\Support\Contracts\HasLabel;
 
 /**
- * The positions that sign a purchase request, in signing order.
+ * The available approval stages for purchase requests.
  */
 enum SignaturePosition: string implements HasColor, HasLabel
 {
@@ -16,21 +16,22 @@ enum SignaturePosition: string implements HasColor, HasLabel
     case AccountingSpv = 'accounting_spv';
     case Director = 'director';
     case Reviewer = 'reviewer';
+    case FinanceLba = 'finance_lba';
+    case FinanceSeniorLba = 'finance_senior_lba';
+    case AccountingTax = 'accounting_tax';
+    case OpsFleetManager = 'ops_fleet_manager';
+    case DirectorOne = 'director1';
+    case DirectorTwo = 'director2';
+    case DirectorMain = 'director_main';
 
     /**
-     * Get the active signing sequence cases in execution order.
+     * Get all available approval stages.
      *
      * @return array<int, self>
      */
-    public static function signingCases(): array
+    public static function allSigningCases(): array
     {
-        return [
-            self::User,
-            self::Finance,
-            self::Accounting,
-            self::AccountingSpv,
-            self::Director,
-        ];
+        return self::cases();
     }
 
     public function getLabel(): string
@@ -42,6 +43,13 @@ enum SignaturePosition: string implements HasColor, HasLabel
             self::AccountingSpv => 'Accounting SPV',
             self::Director => 'Director',
             self::Reviewer => 'Reviewer',
+            self::FinanceLba => 'Finance LBA',
+            self::FinanceSeniorLba => 'Senior Finance',
+            self::AccountingTax => 'Accounting & Tax',
+            self::OpsFleetManager => 'OPS & Fleet Manager',
+            self::DirectorOne => 'Direktur 1',
+            self::DirectorTwo => 'Direktur 2',
+            self::DirectorMain => 'Direktur Utama',
         };
     }
 
@@ -54,6 +62,13 @@ enum SignaturePosition: string implements HasColor, HasLabel
             self::AccountingSpv => 'success',
             self::Director => 'primary',
             self::Reviewer => 'gray',
+            self::FinanceLba => 'info',
+            self::FinanceSeniorLba => 'info',
+            self::AccountingTax => 'warning',
+            self::OpsFleetManager => 'success',
+            self::DirectorOne => 'primary',
+            self::DirectorTwo => 'primary',
+            self::DirectorMain => 'primary',
         };
     }
 
@@ -62,44 +77,7 @@ enum SignaturePosition: string implements HasColor, HasLabel
      */
     public function signatureField(): string
     {
-        return match ($this) {
-            self::User => 'user_signature',
-            self::Finance => 'finance_signature',
-            self::Accounting => 'accounting_signature',
-            self::AccountingSpv => 'accounting_spv_signature',
-            self::Director => 'director_signature',
-            self::Reviewer => 'reviewer_signature',
-        };
-    }
-
-    /**
-     * Get the position that must sign before this one.
-     */
-    public function previous(): ?self
-    {
-        return match ($this) {
-            self::User => null,
-            self::Finance => self::User,
-            self::Accounting => self::Finance,
-            self::AccountingSpv => self::Accounting,
-            self::Director => self::AccountingSpv,
-            self::Reviewer => self::AccountingSpv,
-        };
-    }
-
-    /**
-     * Get the position that signs after this one.
-     */
-    public function next(): ?self
-    {
-        return match ($this) {
-            self::User => self::Finance,
-            self::Finance => self::Accounting,
-            self::Accounting => self::AccountingSpv,
-            self::AccountingSpv => self::Director,
-            self::Director => null,
-            self::Reviewer => self::Director,
-        };
+        return $this->value.'_signature';
     }
 
     /**
@@ -111,7 +89,7 @@ enum SignaturePosition: string implements HasColor, HasLabel
     {
         $options = [];
 
-        foreach (self::signingCases() as $position) {
+        foreach (self::allSigningCases() as $position) {
             $options[$position->value] = $position->getLabel();
         }
 

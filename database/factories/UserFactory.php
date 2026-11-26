@@ -31,6 +31,10 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+            'can_create_pr_lbi' => true,
+            'can_create_pr_lba' => false,
+            'can_sign_pr_lbi' => true,
+            'can_sign_pr_lba' => false,
         ];
     }
 
@@ -51,6 +55,10 @@ class UserFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'employee_id' => Employee::factory()->state(['role' => 'admin']),
+            'can_create_pr_lbi' => true,
+            'can_create_pr_lba' => true,
+            'can_sign_pr_lbi' => true,
+            'can_sign_pr_lba' => true,
         ]);
     }
 
@@ -61,6 +69,10 @@ class UserFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'employee_id' => Employee::factory()->state(['role' => 'superadmin']),
+            'can_create_pr_lbi' => true,
+            'can_create_pr_lba' => true,
+            'can_sign_pr_lbi' => true,
+            'can_sign_pr_lba' => true,
         ]);
     }
 }
